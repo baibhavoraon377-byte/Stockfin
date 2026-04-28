@@ -5,6 +5,18 @@ from datetime import datetime, timedelta
 import time
 from typing import Dict, List, Optional, Tuple
 import streamlit as st
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+@st.cache_resource
+def get_yf_session():
+    session = requests.Session()
+    retry = Retry(total=3, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504])
+    adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
 
 class StockDataFetcher:
     """Handle all yfinance data fetching operations"""
@@ -17,7 +29,7 @@ class StockDataFetcher:
     def get_live_price(_self, symbol: str) -> Optional[float]:
         """Fetch current live price for a stock"""
         try:
-            stock = yf.Ticker(symbol)
+            stock = yf.Ticker(symbol, session=get_yf_session())
             # Try to get real-time data
             current_data = stock.history(period="1d", interval="1m")
             if not current_data.empty:
@@ -37,7 +49,7 @@ class StockDataFetcher:
                             interval: str = "1d") -> Optional[pd.DataFrame]:
         """Fetch historical stock data"""
         try:
-            stock = yf.Ticker(symbol)
+            stock = yf.Ticker(symbol, session=get_yf_session())
             hist = stock.history(period=period, interval=interval)
             if hist.empty:
                 return None
@@ -50,7 +62,7 @@ class StockDataFetcher:
     def get_company_info(_self, symbol: str) -> Dict:
         """Fetch company information"""
         try:
-            stock = yf.Ticker(symbol)
+            stock = yf.Ticker(symbol, session=get_yf_session())
             info = stock.info
             return {
                 'name': info.get('longName', 'N/A'),
@@ -91,7 +103,7 @@ class StockDataFetcher:
     def get_stock_summary(_self, symbol: str) -> Optional[Dict]:
         """Get comprehensive stock summary"""
         try:
-            stock = yf.Ticker(symbol)
+            stock = yf.Ticker(symbol, session=get_yf_session())
             
             # Get current price
             current_price = _self.get_live_price(symbol)
@@ -139,7 +151,7 @@ class StockDataFetcher:
     def get_intraday_data(self, symbol: str, interval: str = "5m") -> Optional[pd.DataFrame]:
         """Fetch intraday data for real-time charts"""
         try:
-            stock = yf.Ticker(symbol)
+            stock = yf.Ticker(symbol, session=get_yf_session())
             # Map interval to yfinance format
             interval_map = {
                 "1m": "1m",
@@ -159,7 +171,7 @@ class StockDataFetcher:
         """Search for stocks by ticker or name"""
         try:
             # This is a simple implementation - you can enhance with yfinance Ticker object
-            ticker = yf.Ticker(query.upper())
+            ticker = yf.Ticker(query.upper(), session=get_yf_session())
             info = ticker.info
             if info and 'symbol' in info:
                 return [{
@@ -192,7 +204,7 @@ class StockDataFetcher:
     def get_options_data(self, symbol: str) -> Optional[Dict]:
         """Fetch options data for a stock"""
         try:
-            stock = yf.Ticker(symbol)
+            stock = yf.Ticker(symbol, session=get_yf_session())
             expirations = stock.options
             if not expirations:
                 return None
