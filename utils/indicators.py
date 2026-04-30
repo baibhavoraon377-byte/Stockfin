@@ -28,8 +28,8 @@ class TechnicalIndicators:
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss
-        df['RSI'] = 100 - (100 / (1 + rs))
+        rs = gain / loss.replace(0, np.nan)
+        df['RSI'] = (100 - (100 / (1 + rs))).fillna(50)
         return df
     
     @staticmethod
@@ -155,20 +155,30 @@ class TechnicalIndicators:
         }
     
     @staticmethod
-    def calculate_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
-        """Calculate all technical indicators at once"""
-        df = df.copy()
+    def calculate_all_indicators(df: pd.DataFrame, indicators: list = None) -> pd.DataFrame:
+        """Calculate all technical indicators at once. If indicators list is provided, only calculate those."""
         
-        # Apply all calculations
-        df = TechnicalIndicators.calculate_moving_averages(df)
-        df = TechnicalIndicators.calculate_ema(df)
-        df = TechnicalIndicators.calculate_rsi(df)
-        df = TechnicalIndicators.calculate_macd(df)
-        df = TechnicalIndicators.calculate_bollinger_bands(df)
-        df = TechnicalIndicators.calculate_stochastic(df)
-        df = TechnicalIndicators.calculate_atr(df)
-        df = TechnicalIndicators.calculate_obv(df)
+        all_funcs = {
+            'ma': TechnicalIndicators.calculate_moving_averages,
+            'ema': TechnicalIndicators.calculate_ema,
+            'rsi': TechnicalIndicators.calculate_rsi,
+            'macd': TechnicalIndicators.calculate_macd,
+            'bb': TechnicalIndicators.calculate_bollinger_bands,
+            'stoch': TechnicalIndicators.calculate_stochastic,
+            'atr': TechnicalIndicators.calculate_atr,
+            'obv': TechnicalIndicators.calculate_obv,
+            'ichimoku': TechnicalIndicators.calculate_ichimoku
+        }
         
+        if indicators is None:
+            # Apply default set of calculations
+            to_run = ['ma', 'ema', 'rsi', 'macd', 'bb', 'stoch', 'atr', 'obv']
+        else:
+            to_run = [ind for ind in indicators if ind in all_funcs]
+            
+        for ind in to_run:
+            df = all_funcs[ind](df)
+            
         return df
     
     @staticmethod
@@ -245,7 +255,10 @@ class TechnicalIndicators:
         # Annualized metrics (252 trading days)
         annual_return = returns.mean() * 252 * 100
         annual_volatility = returns.std() * np.sqrt(252) * 100
-        sharpe_ratio = (annual_return / annual_volatility) if annual_volatility != 0 else 0
+        if pd.isna(annual_volatility) or annual_volatility == 0:
+            sharpe_ratio = 0
+        else:
+            sharpe_ratio = annual_return / annual_volatility
         
         # Maximum Drawdown
         cumulative = (1 + returns).cumprod()
@@ -262,10 +275,16 @@ class TechnicalIndicators:
         # Sortino Ratio
         downside_returns = returns[returns < 0]
         downside_deviation = downside_returns.std() * np.sqrt(252) * 100
-        sortino_ratio = (annual_return / downside_deviation) if downside_deviation != 0 else 0
+        if pd.isna(downside_deviation) or downside_deviation == 0:
+            sortino_ratio = 0
+        else:
+            sortino_ratio = annual_return / downside_deviation
         
         # Calmar Ratio
-        calmar_ratio = (annual_return / abs(max_drawdown)) if max_drawdown != 0 else 0
+        if pd.isna(max_drawdown) or max_drawdown == 0:
+            calmar_ratio = 0
+        else:
+            calmar_ratio = annual_return / abs(max_drawdown)
         
         return {
             'annual_return': annual_return,

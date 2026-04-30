@@ -265,12 +265,14 @@ def get_live_stock_data(symbol: str, period: str = "1mo") -> dict | None:
 @st.cache_data(ttl=300)
 def get_multiple_stocks(symbols: tuple, period: str = "1mo") -> dict:
     import concurrent.futures
+    import os
     result = {}
     
     def _fetch(sym):
         return sym, get_live_stock_data(sym, period)
         
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+    max_w = min(32, (os.cpu_count() or 1) + 4)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_w) as executor:
         future_to_sym = {executor.submit(_fetch, sym): sym for sym in symbols}
         for future in concurrent.futures.as_completed(future_to_sym):
             sym, data = future.result()
@@ -279,8 +281,8 @@ def get_multiple_stocks(symbols: tuple, period: str = "1mo") -> dict:
     return result
 
 
+@st.cache_data(ttl=60)
 def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
     df["MA20"] = df["Close"].rolling(20).mean()
     df["MA50"] = df["Close"].rolling(50).mean()
     delta = df["Close"].diff()
@@ -457,23 +459,22 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-n_cols = min(4, len(stocks_data))
-cols = st.columns(n_cols)
+cards_html = ["<div style='display:flex; gap: 1rem; flex-wrap: wrap;'>"]
 for idx, (sym, data) in enumerate(list(stocks_data.items())[:8]):
-    col_idx = idx % n_cols
     display_name = SYMBOL_TO_NAME.get(sym, sym)
-    with cols[col_idx]:
-        up = data["change"] >= 0
-        st.markdown(f"""
-        <div class="ticker-card" data-ticker="{sym}" data-prev-close="{data['prev_close']}">
-            <div class="ticker-sym">{sym}</div>
-            <div style="font-size:.65rem;color:#4e5669;margin-bottom:.2rem">{display_name[:22]}</div>
-            <div class="ticker-price count-up" id="price-{sym}">${data['price']:.2f}</div>
-            <div class="ticker-chg {'up' if up else 'down'} count-up" id="chg-{sym}">
-                {'▲' if up else '▼'} {abs(data['change_percent']):.2f}%
-            </div>
+    up = data["change"] >= 0
+    cards_html.append(f"""
+    <div class="ticker-card" data-ticker="{sym}" data-prev-close="{data['prev_close']}" style="flex: 1; min-width: 200px;">
+        <div class="ticker-sym">{sym}</div>
+        <div style="font-size:.65rem;color:#4e5669;margin-bottom:.2rem">{display_name[:22]}</div>
+        <div class="ticker-price count-up" id="price-{sym}">${data['price']:.2f}</div>
+        <div class="ticker-chg {'up' if up else 'down'} count-up" id="chg-{sym}">
+            {'▲' if up else '▼'} {abs(data['change_percent']):.2f}%
         </div>
-        """, unsafe_allow_html=True)
+    </div>
+    """)
+cards_html.append("</div>")
+st.markdown("\n".join(cards_html), unsafe_allow_html=True)
 
 st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
 
@@ -917,27 +918,37 @@ st.components.v1.html("""
 <script src="https://cdn.jsdelivr.net/npm/protobufjs@7.2.5/dist/light/protobuf.min.js"></script>
 <script>
 setTimeout(() => {
-    if (!window.parent.document.querySelector('.ticker-card')) return;
+    const docs = window.parent.document;
+    if (!docs.querySelector('.ticker-card')) return;
+    
+    let symbols = [];
+    docs.querySelectorAll('.ticker-card').forEach(c => {
+        let sym = c.getAttribute('data-ticker');
+        if(sym) symbols.push(sym);
+    });
+    
     try {
-        const root = protobuf.Root.fromJSON({"nested":{"PricingData":{"fields":{"id":{"type":"string","id":1},"price":{"type":"float","id":2},"changePercent":{"type":"float","id":8},"change":{"type":"float","id":12},"previousClose":{"type":"float","id":16}}}}});
-        const Yaticker = root.lookupType("PricingData");
+        if (!window.parent.Yaticker) {
+            const root = protobuf.Root.fromJSON({"nested":{"PricingData":{"fields":{"id":{"type":"string","id":1},"price":{"type":"float","id":2},"changePercent":{"type":"float","id":8},"change":{"type":"float","id":12},"previousClose":{"type":"float","id":16}}}}});
+            window.parent.Yaticker = root.lookupType("PricingData");
+        }
+        
+        if (window.parent.stockfin_ws && window.parent.stockfin_ws.readyState === WebSocket.OPEN) {
+            window.parent.stockfin_ws.send(JSON.stringify({subscribe: symbols}));
+            return;
+        }
+
         const ws = new WebSocket('wss://streamer.finance.yahoo.com');
+        window.parent.stockfin_ws = ws;
         
         ws.onopen = () => {
-            const docs = window.parent.document;
-            const cards = docs.querySelectorAll('.ticker-card');
-            let symbols = [];
-            cards.forEach(c => {
-                let sym = c.getAttribute('data-ticker');
-                if(sym) symbols.push(sym);
-            });
             if (symbols.length > 0) {
                 ws.send(JSON.stringify({subscribe: symbols}));
             }
         };
         ws.onmessage = (msg) => {
+            const Yaticker = window.parent.Yaticker;
             const decoded = Yaticker.decode(new Uint8Array(atob(msg.data).split('').map(c => c.charCodeAt(0))));
-            const docs = window.parent.document;
             const priceEl = docs.getElementById('price-' + decoded.id);
             const chgEl = docs.getElementById('chg-' + decoded.id);
             const card = docs.querySelector(`.ticker-card[data-ticker="${decoded.id}"]`);
