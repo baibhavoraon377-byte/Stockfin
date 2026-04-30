@@ -463,16 +463,16 @@ cards_html = ["<div style='display:flex; gap: 1rem; flex-wrap: wrap;'>"]
 for idx, (sym, data) in enumerate(list(stocks_data.items())[:8]):
     display_name = SYMBOL_TO_NAME.get(sym, sym)
     up = data["change"] >= 0
-    cards_html.append(f"""
-    <div class="ticker-card" data-ticker="{sym}" data-prev-close="{data['prev_close']}" style="flex: 1; min-width: 200px;">
-        <div class="ticker-sym">{sym}</div>
-        <div style="font-size:.65rem;color:#4e5669;margin-bottom:.2rem">{display_name[:22]}</div>
-        <div class="ticker-price count-up" id="price-{sym}">${data['price']:.2f}</div>
-        <div class="ticker-chg {'up' if up else 'down'} count-up" id="chg-{sym}">
-            {'▲' if up else '▼'} {abs(data['change_percent']):.2f}%
-        </div>
-    </div>
-    """)
+    cards_html.append(
+        f'<div class="ticker-card" data-ticker="{sym}" data-prev-close="{data["prev_close"]}" style="flex: 1; min-width: 200px;">'
+        f'<div class="ticker-sym">{sym}</div>'
+        f'<div style="font-size:.65rem;color:#4e5669;margin-bottom:.2rem">{display_name[:22]}</div>'
+        f'<div class="ticker-price count-up" id="price-{sym}">${data["price"]:.2f}</div>'
+        f'<div class="ticker-chg {"up" if up else "down"} count-up" id="chg-{sym}">'
+        f'{"▲" if up else "▼"} {abs(data["change_percent"]):.2f}%'
+        f'</div>'
+        f'</div>'
+    )
 cards_html.append("</div>")
 st.markdown("\n".join(cards_html), unsafe_allow_html=True)
 
