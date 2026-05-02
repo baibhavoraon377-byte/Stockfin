@@ -266,6 +266,15 @@ def calc_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
 def calc_risk(df: pd.DataFrame) -> dict:
     r  = df["Close"].pct_change().dropna()
+    if len(r) == 0:
+        return {
+            "Annual Return": 0.0,
+            "Annual Volatility": 0.0,
+            "Sharpe Ratio": 0.0,
+            "Max Drawdown": 0.0,
+            "VaR (95%)": 0.0,
+            "Sortino Ratio": 0.0,
+        }
     ar = r.mean() * 252 * 100
     av = r.std()  * np.sqrt(252) * 100
     sr = ar / av if av else 0.0
@@ -352,8 +361,13 @@ if df is None or df.empty:
 df    = calc_indicators(df)
 risk  = calc_risk(df)
 cur_p = float(df["Close"].iloc[-1])
-chg   = cur_p - float(df["Close"].iloc[-2])
-chg_p = (chg / float(df["Close"].iloc[-2])) * 100
+if len(df["Close"]) >= 2:
+    prev_p = float(df["Close"].iloc[-2])
+    chg    = cur_p - prev_p
+    chg_p  = (chg / prev_p) * 100 if prev_p else 0.0
+else:
+    chg = 0.0
+    chg_p = 0.0
 
 # ── Key metrics ───────────────────────────────────────────────────────────────
 mc1, mc2, mc3, mc4 = st.columns(4)

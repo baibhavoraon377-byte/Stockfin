@@ -197,7 +197,10 @@ load_portfolio()
 @st.cache_data(ttl=60)
 def get_price(symbol):
     try:
-        return yf.Ticker(symbol).history(period="1d")['Close'].iloc[-1]
+        df = yf.Ticker(symbol).history(period="1d")
+        if df.empty:
+            df = yf.Ticker(symbol).history(period="5d")
+        return float(df['Close'].iloc[-1])
     except: return None
 
 @st.cache_data(ttl=3600)
@@ -212,15 +215,16 @@ def calc_metrics(holdings):
     rows = []
     for h in holdings:
         p = get_price(h['symbol'])
-        if p:
-            cur  = h['shares'] * p
-            inv  = h['shares'] * h['buy_price']
-            pnl  = cur - inv
-            pnl_ = (pnl / inv) * 100 if inv else 0
-            total_val += cur; total_inv += inv
-            sector = get_sector(h['symbol'])
-            rows.append({**h, 'current_price':p, 'current_value':cur,
-                         'invested':inv, 'pnl':pnl, 'pnl_percent':pnl_, 'allocation':0, 'sector': sector})
+        if p is None:
+            p = float(h.get('buy_price', 0.0))
+        cur  = h['shares'] * p
+        inv  = h['shares'] * h['buy_price']
+        pnl  = cur - inv
+        pnl_ = (pnl / inv) * 100 if inv else 0
+        total_val += cur; total_inv += inv
+        sector = get_sector(h['symbol'])
+        rows.append({**h, 'current_price':p, 'current_value':cur,
+                     'invested':inv, 'pnl':pnl, 'pnl_percent':pnl_, 'allocation':0, 'sector': sector})
     for r in rows: r['allocation'] = (r['current_value']/total_val*100) if total_val else 0
     pnl_total = total_val - (total_inv + st.session_state.portfolio['cash_balance'])
     pnl_pct   = (pnl_total/(total_inv+st.session_state.portfolio['cash_balance'])*100) if (total_inv+st.session_state.portfolio['cash_balance']) else 0
@@ -376,11 +380,14 @@ if st.session_state.portfolio['holdings']:
     st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
     st.markdown('<div style="font-family:\'Syne\',sans-serif;font-size:.85rem;font-weight:700;color:#f0f2f8;margin-bottom:.5rem">Return by Stock</div>', unsafe_allow_html=True)
     perf_df = pd.DataFrame([{'Symbol':m['symbol'],'P&L %':m['pnl_percent']} for m in metrics])
-    colors  = ['#22d98a' if x >= 0 else '#f05252' for x in perf_df['P&L %']]
-    fig2 = go.Figure(go.Bar(x=perf_df['Symbol'], y=perf_df['P&L %'],
-                            marker_color=colors, marker_line_width=0))
-    fig2.update_layout(height=340, yaxis_title="Return (%)", **DARK_LAYOUT)
-    st.plotly_chart(fig2, use_container_width=True)
+    if not perf_df.empty:
+        colors  = ['#22d98a' if x >= 0 else '#f05252' for x in perf_df['P&L %']]
+        fig2 = go.Figure(go.Bar(x=perf_df['Symbol'], y=perf_df['P&L %'],
+                                marker_color=colors, marker_line_width=0))
+        fig2.update_layout(height=340, yaxis_title="Return (%)", **DARK_LAYOUT)
+        st.plotly_chart(fig2, use_container_width=True)
+    else:
+        st.info("No active holdings to display return by stock.")
 
     # ── Interactive Holdings Table ──
     st.markdown('<div style="font-family:\'Syne\',sans-serif;font-size:.85rem;font-weight:700;color:#f0f2f8;margin-bottom:.5rem;margin-top:.3rem">Current Holdings (Interactive)</div>', unsafe_allow_html=True)
