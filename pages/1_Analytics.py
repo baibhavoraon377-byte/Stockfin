@@ -531,8 +531,6 @@ with tab1:
             """, unsafe_allow_html=True)
 
 
-        st.warning(f"Failed to load options data: {e}")
-
 # ── Tab 2 — Risk ──────────────────────────────────────────────────────────────
 with tab2:
     st.markdown(
