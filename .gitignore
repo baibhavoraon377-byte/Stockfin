@@ -35,7 +35,7 @@ __pycache__/
 
 # ── Portfolio data (local only) ───────────────────────────
 # Comment this out if you want to version-control your portfolio
-data/portfolio_data.json
+# data/portfolio_data.json
 
 # ── IDE / editor ──────────────────────────────────────────
 .idea/
