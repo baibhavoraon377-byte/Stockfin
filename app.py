@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 import time
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
+from utils.supabase_client import require_auth, is_authenticated, logout
 
 # ── Page config (ONLY in the root app.py, never in pages/) ─────────────────
 st.set_page_config(
@@ -258,6 +259,7 @@ def get_live_stock_data(symbol: str, period: str = "1mo") -> dict | None:
             "info":           stock.info,
         }
     except Exception as exc:
+        print(f"DEBUG: Error fetching {symbol}: {exc}")
         st.warning(f"Could not fetch {symbol}: {exc}")
         return None
 
@@ -347,6 +349,10 @@ with st.sidebar:
     </div>
     <hr style="border-color:rgba(255,255,255,.06);margin:0.8rem 0">
     """, unsafe_allow_html=True)
+    
+    if is_authenticated():
+        if st.button("Log Out", use_container_width=True):
+            logout()
 
     st.markdown(
         '<div style="font-size:.7rem;font-weight:600;letter-spacing:.1em;'
@@ -379,6 +385,9 @@ with st.sidebar:
         "Data · Yahoo Finance · Refreshes ~60 s</div>",
         unsafe_allow_html=True,
     )
+
+if not require_auth():
+    st.stop()
 
 # ── Header ────────────────────────────────────────────────────────────────────
 hc1, hc2, hc3 = st.columns([3, 1.4, 0.8])

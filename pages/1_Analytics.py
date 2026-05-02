@@ -12,7 +12,6 @@ from plotly.subplots import make_subplots
 import yfinance as yf
 from datetime import datetime, timedelta
 import warnings
-from utils.stock_data import get_yf_session
 
 warnings.filterwarnings("ignore")
 
@@ -37,11 +36,7 @@ html,body,[class*="css"]{font-family:'DM Sans',sans-serif!important;color:var(--
                 radial-gradient(circle at 85% 30%, rgba(124, 111, 247, 0.12), transparent 45%),
                 var(--bg-base) !important;
     background-size: 200% 200% !important;
-}
-@media (prefers-reduced-motion: no-preference) {
-    .stApp {
-        animation: meshBg 60s ease infinite !important;
-    }
+    animation: meshBg 25s ease infinite !important;
 }
 @keyframes slideUpFade {
     from { opacity: 0; transform: translateY(20px); }
@@ -228,7 +223,7 @@ STOCK_CATALOGUE = {
 @st.cache_data(ttl=300)
 def fetch_stock_data(symbol: str, period: str = "6mo") -> tuple:
     try:
-        stock = yf.Ticker(symbol, session=get_yf_session())
+        stock = yf.Ticker(symbol)
         hist = stock.history(period=period)
         return (hist, stock.info) if not hist.empty else (None, {})
     except Exception as exc:
@@ -236,7 +231,6 @@ def fetch_stock_data(symbol: str, period: str = "6mo") -> tuple:
         return None, {}
 
 
-@st.cache_data(ttl=300)
 def calc_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df["Momentum"] = df["Close"] - df["Close"].shift(10)
@@ -270,7 +264,6 @@ def calc_indicators(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=300)
 def calc_risk(df: pd.DataFrame) -> dict:
     r  = df["Close"].pct_change().dropna()
     ar = r.mean() * 252 * 100
@@ -425,51 +418,45 @@ with tab1:
                              line=dict(color="#22d98a", width=1.2)), row=5, col=1)
     if show_patterns:
         try:
-            @st.cache_data(ttl=300)
-            def detect_patterns(close_vals, dates_str):
-                shapes, traces, anns = [], [], []
-                try:
-                    from scipy.signal import find_peaks
-                    prom = np.mean(close_vals) * 0.025
-                    peaks, _ = find_peaks(close_vals, distance=7, prominence=prom)
-                    troughs, _ = find_peaks(-close_vals, distance=7, prominence=prom)
-                    
-                    for i in range(len(peaks) - 1):
-                        p1, p2 = peaks[i], peaks[i+1]
-                        if abs(close_vals[p1] - close_vals[p2]) / close_vals[p1] < 0.03:
-                            btwn = [t for t in troughs if p1 < t < p2]
-                            if btwn and (close_vals[p1] - close_vals[min(btwn)]) / close_vals[p1] > 0.04:
-                                shapes.append(dict(type="line", x0=dates_str[p1], y0=close_vals[p1], x1=dates_str[p2], y1=close_vals[p2], line=dict(color="#f05252", width=3, dash="dot")))
-                                anns.append(dict(x=dates_str[p2], y=close_vals[p2]*1.03, text="Double Top", color="#f05252"))
-
-                    for i in range(len(peaks) - 2):
-                        p1, p2, p3 = peaks[i], peaks[i+1], peaks[i+2]
-                        if close_vals[p2] > close_vals[p1] and close_vals[p2] > close_vals[p3]:
-                            if abs(close_vals[p1] - close_vals[p3]) / close_vals[p1] < 0.04:
-                                traces.append(dict(x=[dates_str[p1], dates_str[p2], dates_str[p3]], y=[close_vals[p1], close_vals[p2], close_vals[p3]]))
-                                anns.append(dict(x=dates_str[p2], y=close_vals[p2]*1.04, text="Head & Shoulders", color="#f5a623"))
-
-                    for i in range(10, len(close_vals) - 10):
-                        if (close_vals[i] - close_vals[i-10]) / close_vals[i-10] > 0.12:
-                            if -0.08 < (close_vals[i+10] - close_vals[i]) / close_vals[i] < 0.02:
-                                shapes.append(dict(type="rect", x0=dates_str[i], y0=min(close_vals[i:i+10]), x1=dates_str[i+10], y1=max(close_vals[i:i+10]), fillcolor="rgba(34,217,138,0.15)", line=dict(color="#22d98a", width=1.5, dash="dot")))
-                                anns.append(dict(x=dates_str[i+5], y=max(close_vals[i:i+10])*1.04, text="Bull Flag", color="#22d98a"))
-                except Exception:
-                    pass
-                return shapes, traces, anns
-
-            # Use dates_str to ensure it's hashable for st.cache_data
-            dates_str = df.index.astype(str).tolist()
-            shapes, traces, anns = detect_patterns(df['Close'].values, dates_str)
+            close_vals = df['Close'].values
+            dates = df.index
             
-            for s in shapes:
-                s['row'] = 1; s['col'] = 1
-                fig.add_shape(**s)
-            for t in traces:
-                fig.add_trace(go.Scatter(x=t['x'], y=t['y'], mode="lines+markers", line=dict(color=t.get('color', '#f5a623'), width=2), name="Pattern", showlegend=False), row=1, col=1)
-            for a in anns:
-                fig.add_annotation(x=a['x'], y=a['y'], text=a['text'], showarrow=False, font=dict(color=a['color'], size=11, family="Syne", weight="bold"), row=1, col=1)
-                
+            def get_peaks(arr, distance=7, prominence=0):
+                peaks = []
+                for i in range(distance, len(arr) - distance):
+                    window = arr[i-distance:i+distance+1]
+                    if arr[i] == max(window) and (arr[i] - min(window)) >= prominence:
+                        if not peaks or i - peaks[-1] >= distance:
+                            peaks.append(i)
+                return peaks
+
+            prominence = close_vals.mean() * 0.025
+            peaks = get_peaks(close_vals, distance=7, prominence=prominence)
+            troughs = get_peaks(-close_vals, distance=7, prominence=prominence)
+            
+            # Double Tops
+            for i in range(len(peaks) - 1):
+                p1, p2 = peaks[i], peaks[i+1]
+                if abs(close_vals[p1] - close_vals[p2]) / close_vals[p1] < 0.03:
+                    btwn = [t for t in troughs if p1 < t < p2]
+                    if btwn and (close_vals[p1] - close_vals[min(btwn)]) / close_vals[p1] > 0.04:
+                        fig.add_shape(type="line", x0=dates[p1], y0=close_vals[p1], x1=dates[p2], y1=close_vals[p2], line=dict(color="#f05252", width=3, dash="dot"), row=1, col=1)
+                        fig.add_annotation(x=dates[p2], y=close_vals[p2]*1.03, text="Double Top", showarrow=False, font=dict(color="#f05252", size=11, family="Syne", weight="bold"), row=1, col=1)
+
+            # Head & Shoulders
+            for i in range(len(peaks) - 2):
+                p1, p2, p3 = peaks[i], peaks[i+1], peaks[i+2]
+                if close_vals[p2] > close_vals[p1] and close_vals[p2] > close_vals[p3]:
+                    if abs(close_vals[p1] - close_vals[p3]) / close_vals[p1] < 0.04:
+                        fig.add_trace(go.Scatter(x=[dates[p1], dates[p2], dates[p3]], y=[close_vals[p1], close_vals[p2], close_vals[p3]], mode="lines+markers", line=dict(color="#f5a623", width=2), name="Head & Shoulders", showlegend=False), row=1, col=1)
+                        fig.add_annotation(x=dates[p2], y=close_vals[p2]*1.04, text="Head & Shoulders", showarrow=False, font=dict(color="#f5a623", size=11, family="Syne", weight="bold"), row=1, col=1)
+
+            # Bull Flags
+            for i in range(10, len(close_vals) - 10):
+                if (close_vals[i] - close_vals[i-10]) / close_vals[i-10] > 0.12:
+                    if -0.08 < (close_vals[i+10] - close_vals[i]) / close_vals[i] < 0.02:
+                        fig.add_shape(type="rect", x0=dates[i], y0=min(close_vals[i:i+10]), x1=dates[i+10], y1=max(close_vals[i:i+10]), fillcolor="rgba(34,217,138,0.15)", line=dict(color="#22d98a", width=1.5, dash="dot"), row=1, col=1)
+                        fig.add_annotation(x=dates[i+5], y=max(close_vals[i:i+10])*1.04, text="Bull Flag", showarrow=False, font=dict(color="#22d98a", size=11, family="Syne", weight="bold"), row=1, col=1)
         except Exception as e:
             pass
 
@@ -515,33 +502,29 @@ with tab_options:
     )
     import math
     from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
-    from scipy.stats import norm
 
-    def calc_greeks_vectorized(S, K_array, T, r, sigma_array, opt_type):
-        invalid = (sigma_array <= 0) | pd.isna(sigma_array)
-        sigma_safe = np.where(invalid, 1e-9, sigma_array)
-        T_safe = max(T, 1e-9)
+    def norm_cdf(x):
+        return (1.0 + math.erf(x / math.sqrt(2.0))) / 2.0
 
-        d1 = (np.log(S / K_array) + (r + 0.5 * sigma_safe**2) * T_safe) / (sigma_safe * np.sqrt(T_safe))
-        d2 = d1 - sigma_safe * np.sqrt(T_safe)
-        
-        pdf_d1 = norm.pdf(d1)
-        cdf_d1 = norm.cdf(d1)
-        cdf_d2 = norm.cdf(d2)
-        
-        if opt_type == 'call':
-            delta = cdf_d1
-            theta = (- (S * pdf_d1 * sigma_safe) / (2 * np.sqrt(T_safe)) 
-                     - r * K_array * np.exp(-r * T_safe) * cdf_d2) / 365.0
-        else:
-            delta = cdf_d1 - 1.0
-            theta = (- (S * pdf_d1 * sigma_safe) / (2 * np.sqrt(T_safe)) 
-                     + r * K_array * np.exp(-r * T_safe) * norm.cdf(-d2)) / 365.0
-            
-        delta = np.where(invalid, 0.0, delta)
-        theta = np.where(invalid, 0.0, theta)
-        
-        return np.round(delta, 3), np.round(theta, 4)
+    def norm_pdf(x):
+        return math.exp(-0.5 * x**2) / math.sqrt(2 * math.pi)
+
+    def calc_greeks(S, K, T, r, sigma, opt_type):
+        if T <= 0 or sigma <= 0: return 0.0, 0.0
+        try:
+            d1 = (math.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * math.sqrt(T))
+            d2 = d1 - sigma * math.sqrt(T)
+            if opt_type == 'call':
+                delta = norm_cdf(d1)
+                theta = (- (S * norm_pdf(d1) * sigma) / (2 * math.sqrt(T))
+                         - r * K * math.exp(-r * T) * norm_cdf(d2)) / 365.0
+            else:
+                delta = norm_cdf(d1) - 1.0
+                theta = (- (S * norm_pdf(d1) * sigma) / (2 * math.sqrt(T))
+                         + r * K * math.exp(-r * T) * norm_cdf(-d2)) / 365.0
+            return round(delta, 3), round(theta, 4)
+        except Exception:
+            return 0.0, 0.0
 
     _opt_css = {
         ".ag-root-wrapper": {"background-color": "var(--bg-card) !important", "border": "1px solid var(--border) !important", "border-radius": "14px", "overflow": "hidden"},
@@ -555,29 +538,17 @@ with tab_options:
         ".ag-paging-panel": {"background-color": "transparent !important", "border-top": "1px solid var(--border) !important", "color": "var(--text-secondary) !important"},
     }
 
-    @st.cache_data(ttl=300)
-    def fetch_options_dates(symbol: str):
-        try:
-            return yf.Ticker(symbol, session=get_yf_session()).options
-        except Exception:
-            return []
-
-    @st.cache_data(ttl=300)
-    def fetch_options_chain_data(symbol: str, date: str):
-        try:
-            return yf.Ticker(symbol, session=get_yf_session()).option_chain(date)
-        except Exception:
-            return None
-
     try:
-        opt_dates = fetch_options_dates(stock_symbol)
+        opt_tk    = yf.Ticker(stock_symbol)
+        opt_dates = opt_tk.options
         if opt_dates:
             col_exp, col_price = st.columns([2, 1])
             with col_exp:
                 sel_date = st.selectbox("Expiration Date", opt_dates, key="opt_date_sel")
-            
-            S_price = float(info.get('regularMarketPrice') or info.get('currentPrice', cur_p))
-            
+            try:
+                S_price = float(opt_tk.fast_info.last_price)
+            except Exception:
+                S_price = float(opt_tk.info.get('regularMarketPrice') or opt_tk.info.get('currentPrice', 0))
             with col_price:
                 st.markdown(f"""
                 <div style="background:rgba(34,217,138,0.08);border:1px solid rgba(34,217,138,0.2);
@@ -586,10 +557,7 @@ with tab_options:
                     <div style="font-family:'Syne',sans-serif;font-size:1.4rem;font-weight:700;color:#22d98a">${S_price:.2f}</div>
                 </div>""", unsafe_allow_html=True)
 
-            chain = fetch_options_chain_data(stock_symbol, sel_date)
-            if chain is None:
-                st.error("Could not fetch option chain for the selected date.")
-                st.stop()
+            chain  = opt_tk.option_chain(sel_date)
             dt_str = datetime.strptime(sel_date, "%Y-%m-%d").date()
             T_days = max((dt_str - datetime.now().date()).days / 365.0, 0.001)
 
@@ -617,8 +585,13 @@ with tab_options:
                 df_chain['P_Delta'] = 0.0; df_chain['P_Theta'] = 0.0
                 
                 # Calculate Greeks
-                df_chain['C_Delta'], df_chain['C_Theta'] = calc_greeks_vectorized(S_price, df_chain['Strike'], T_days, 0.045, df_chain['C_IV'], 'call')
-                df_chain['P_Delta'], df_chain['P_Theta'] = calc_greeks_vectorized(S_price, df_chain['Strike'], T_days, 0.045, df_chain['P_IV'], 'put')
+                for idx, row in df_chain.iterrows():
+                    call_delta, call_theta = calc_greeks(S_price, row['Strike'], T_days, 0.045, row.get('C_IV', 0.0), 'call')
+                    put_delta, put_theta = calc_greeks(S_price, row['Strike'], T_days, 0.045, row.get('P_IV', 0.0), 'put')
+                    df_chain.at[idx, 'C_Delta'] = call_delta
+                    df_chain.at[idx, 'C_Theta'] = call_theta
+                    df_chain.at[idx, 'P_Delta'] = put_delta
+                    df_chain.at[idx, 'P_Theta'] = put_theta
                 
                 display = df_chain[['C_OI','C_Vol','C_IV_pct','C_Theta','C_Delta','C_Last','C_Bid','C_Ask', 'C_ITM',
                                     'Strike',
