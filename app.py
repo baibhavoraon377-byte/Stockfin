@@ -205,9 +205,16 @@ SYMBOL_TO_NAME = {v: k for k, v in STOCK_CATALOGUE.items()}
 def _fetch_with_retry(symbol: str, period: str = "1mo", retries: int = 3) -> dict | None:
     """Fetch stock data with exponential back-off to survive rate limits."""
     import random
+    import requests
+    
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+    })
+
     for attempt in range(retries):
         try:
-            stock = yf.Ticker(symbol)
+            stock = yf.Ticker(symbol, session=session)
             fi = stock.fast_info
 
             # ── Most accurate live price (priority order) ──────────────────
@@ -261,12 +268,11 @@ def _fetch_with_retry(symbol: str, period: str = "1mo", retries: int = 3) -> dic
                 "info":           getattr(stock, "info", {}),
             }
         except Exception as exc:
-            err = str(exc).lower()
-            if "too many requests" in err or "rate limit" in err or "429" in err:
+            # Retry on all exceptions (403, 429, timeouts)
+            if attempt < retries - 1:
                 wait = (2 ** attempt) + random.uniform(0.5, 1.5)
                 time.sleep(wait)
             else:
-                # Non-rate-limit error — no point retrying
                 return None
     return None
 
