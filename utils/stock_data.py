@@ -5,19 +5,6 @@ from datetime import datetime, timedelta
 import time
 from typing import Dict, List, Optional, Tuple
 import streamlit as st
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-import os
-
-@st.cache_resource
-def get_yf_session():
-    session = requests.Session()
-    retry = Retry(total=3, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504])
-    adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=retry)
-    session.mount('http://', adapter)
-    session.mount('https://', adapter)
-    return session
 
 class StockDataFetcher:
     """Handle all yfinance data fetching operations"""
@@ -92,8 +79,7 @@ class StockDataFetcher:
         def _fetch(symbol):
             return symbol, self.get_stock_summary(symbol)
             
-        max_w = min(32, (os.cpu_count() or 1) + 4)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_w) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
             future_to_sym = {executor.submit(_fetch, sym): sym for sym in symbols}
             for future in concurrent.futures.as_completed(future_to_sym):
                 sym, data = future.result()
@@ -107,38 +93,41 @@ class StockDataFetcher:
         try:
             stock = yf.Ticker(symbol)
             
-            # Get 30-day historical data for charts
-            hist_30d = stock.history(period="1mo")
-            if hist_30d.empty:
+            # Get current price
+            current_price = _self.get_live_price(symbol)
+            if current_price is None:
                 return None
             
-            current_price = hist_30d['Close'].iloc[-1]
-            
-            if len(hist_30d) >= 2:
-                prev_close = hist_30d['Close'].iloc[-2]
+            # Get historical data for daily metrics
+            hist = stock.history(period="2d")
+            if len(hist) >= 2:
+                prev_close = hist['Close'].iloc[-2]
                 change = current_price - prev_close
                 change_percent = (change / prev_close) * 100
-                day_high = hist_30d['High'].iloc[-1]
-                day_low = hist_30d['Low'].iloc[-1]
-                volume = hist_30d['Volume'].iloc[-1]
-                open_price = hist_30d['Open'].iloc[-1]
+                day_high = hist['High'].iloc[-1]
+                day_low = hist['Low'].iloc[-1]
+                volume = hist['Volume'].iloc[-1]
+                open_price = hist['Open'].iloc[-1]
             else:
                 change = 0
                 change_percent = 0
                 day_high = current_price
                 day_low = current_price
-                volume = hist_30d['Volume'].iloc[-1]
-                open_price = hist_30d['Open'].iloc[-1]
+                volume = 0
+                open_price = current_price
+            
+            # Get 30-day historical data for charts
+            hist_30d = stock.history(period="1mo")
             
             return {
                 'symbol': symbol,
-                'price': float(current_price),
-                'change': float(change),
-                'change_percent': float(change_percent),
-                'open': float(open_price),
-                'high': float(day_high),
-                'low': float(day_low),
-                'volume': float(volume),
+                'price': current_price,
+                'change': change,
+                'change_percent': change_percent,
+                'open': open_price,
+                'high': day_high,
+                'low': day_low,
+                'volume': volume,
                 'history': hist_30d,
                 'info': _self.get_company_info(symbol),
                 'timestamp': datetime.now()
@@ -179,8 +168,7 @@ class StockDataFetcher:
                     'type': info.get('quoteType', 'EQUITY')
                 }]
             return []
-        except Exception as e:
-            print(f"Error searching for {query}: {e}")
+        except:
             return []
     
     def get_market_movers(self, move_type: str = "gainers") -> List[Dict]:
@@ -238,14 +226,9 @@ class PortfolioManager:
         total_invested = 0
         holdings_data = []
         
-        symbols = [h['symbol'] for h in holdings]
-        multi_data = self.data_fetcher.get_multiple_stocks(symbols)
-        
         for holding in holdings:
-            sym = holding['symbol']
-            stock_data = multi_data.get(sym)
-            if stock_data:
-                current_price = stock_data['price']
+            current_price = self.data_fetcher.get_live_price(holding['symbol'])
+            if current_price:
                 current_value = holding['shares'] * current_price
                 invested_value = holding['shares'] * holding['buy_price']
                 pnl = current_value - invested_value
@@ -280,44 +263,18 @@ class PortfolioManager:
     
     def get_portfolio_performance_history(self, holdings: List[Dict], days: int = 30) -> pd.DataFrame:
         """Get historical performance of portfolio"""
-        import sqlite3
-        
-        # Connect to SQLite
-        conn = sqlite3.connect('portfolio_cache.db')
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS portfolio_history (
-                date TEXT PRIMARY KEY,
-                value REAL
-            )
-        ''')
-        
         dates = pd.date_range(end=datetime.now(), periods=days, freq='D')
         performance = []
         
         for date in dates:
-            date_str = date.strftime('%Y-%m-%d')
-            cursor.execute('SELECT value FROM portfolio_history WHERE date = ?', (date_str,))
-            row = cursor.fetchone()
-            
-            if row:
-                value = row[0]
-            else:
-                # Calculate portfolio value on each date (simplified)
-                # In production, you'd need historical prices for each holding
-                value = sum(h['shares'] * h['buy_price'] for h in holdings)
-                
-                # Only cache dates before today to avoid caching incomplete data
-                if date.date() < datetime.now().date():
-                    cursor.execute('INSERT OR REPLACE INTO portfolio_history (date, value) VALUES (?, ?)', (date_str, value))
-                    conn.commit()
-            
+            # Calculate portfolio value on each date (simplified)
+            # In production, you'd need historical prices for each holding
+            value = sum(h['shares'] * h['buy_price'] for h in holdings)
             performance.append({
                 'date': date,
                 'value': value
             })
-            
-        conn.close()
+        
         return pd.DataFrame(performance)
 
 

@@ -262,23 +262,8 @@ def make_sparkline(values: list, color: str) -> go.Figure:
 
 
 # ── Session state ─────────────────────────────────────────────────────────────
-import sys, os
-sys.path.insert(0, os.path.dirname(__file__) + '/..')
-from utils.supabase_client import get_supabase_client, require_auth
-
-if not require_auth():
-    st.stop()
-
-client = get_supabase_client()
-user_id = st.session_state["user"].id
-
-def load_watchlist():
-    res = client.table("watchlists").select("symbol").eq("user_id", user_id).execute()
-    st.session_state["watchlist"] = [r["symbol"] for r in res.data]
-
 if "watchlist" not in st.session_state:
-    load_watchlist()
-
+    st.session_state["watchlist"] = ["AAPL", "TSLA", "NVDA", "MSFT", "AMZN"]
 if "alerts" not in st.session_state:
     st.session_state["alerts"] = []
 
@@ -326,8 +311,7 @@ with st.sidebar:
         if chosen_name != "— choose a stock —":
             sym_up = STOCK_CATALOGUE[chosen_name]
             if sym_up not in st.session_state["watchlist"]:
-                client.table("watchlists").insert({"user_id": user_id, "symbol": sym_up}).execute()
-                load_watchlist()
+                st.session_state["watchlist"].append(sym_up)
                 st.rerun()
 
     st.markdown('<hr style="border-color:rgba(255,255,255,.06);margin:.6rem 0">', unsafe_allow_html=True)
@@ -437,8 +421,7 @@ with tab1:
                     """, unsafe_allow_html=True)
                 with col_b:
                     if st.button("x", key=f"del_{sym}_none", help=f"Remove {sym}"):
-                        client.table("watchlists").delete().eq("user_id", user_id).eq("symbol", sym).execute()
-                        load_watchlist()
+                        st.session_state["watchlist"].remove(sym)
                         st.rerun()
                 continue
 
@@ -476,8 +459,7 @@ with tab1:
                 """, unsafe_allow_html=True)
             with col_del:
                 if st.button("x", key=f"del_{sym}", help=f"Remove {sym}"):
-                    client.table("watchlists").delete().eq("user_id", user_id).eq("symbol", sym).execute()
-                    load_watchlist()
+                    st.session_state["watchlist"].remove(sym)
                     st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
             st.markdown('<hr style="border-color:rgba(255,255,255,.04);margin:.1rem 0">', unsafe_allow_html=True)

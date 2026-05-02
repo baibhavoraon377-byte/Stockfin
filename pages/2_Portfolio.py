@@ -179,44 +179,20 @@ DARK_LAYOUT = dict(
 )
 
 # ── Session state ──────────────────────────────────────────────────────────────
-import sys, os
-sys.path.insert(0, os.path.dirname(__file__) + '/..')
-from utils.supabase_client import get_supabase_client, require_auth
+if 'portfolio' not in st.session_state:
+    st.session_state.portfolio = {'holdings': [], 'cash_balance': 10000.00}
 
-if not require_auth():
-    st.stop()
-
-client = get_supabase_client()
-user_id = st.session_state["user"].id
-
-def load_portfolio():
-    res_holdings = client.table("portfolios").select("*").eq("user_id", user_id).execute()
-    res_profile = client.table("user_profiles").select("cash_balance").eq("user_id", user_id).execute()
-    
-    cash = 10000.00
-    if res_profile.data:
-        cash = float(res_profile.data[0]["cash_balance"])
-    else:
-        client.table("user_profiles").insert({"user_id": user_id, "cash_balance": cash}).execute()
-        
-    holdings = []
-    for h in res_holdings.data:
-        holdings.append({
-            'id': h['id'],
-            'symbol': h['symbol'],
-            'shares': float(h['shares']),
-            'buy_price': float(h['buy_price']),
-            'buy_date': h['buy_date']
-        })
-    st.session_state.portfolio = {'holdings': holdings, 'cash_balance': cash}
+import pathlib as _pathlib
+PORTFOLIO_FILE = str(_pathlib.Path(__file__).parent.parent / 'data' / 'portfolio_data.json')
 
 def save_portfolio():
-    # Only update cash profile
-    client.table("user_profiles").update({"cash_balance": st.session_state.portfolio['cash_balance']}).eq("user_id", user_id).execute()
+    with open(PORTFOLIO_FILE, 'w') as f: json.dump(st.session_state.portfolio, f)
 
-if 'portfolio' not in st.session_state or getattr(st.session_state, '_portfolio_loaded', False) == False:
-    load_portfolio()
-    st.session_state._portfolio_loaded = True
+def load_portfolio():
+    if os.path.exists(PORTFOLIO_FILE):
+        with open(PORTFOLIO_FILE, 'r') as f: st.session_state.portfolio = json.load(f)
+
+load_portfolio()
 
 @st.cache_data(ttl=60)
 def get_price(symbol):
@@ -296,11 +272,9 @@ with st.sidebar:
         bp    = st.number_input("Buy Price ($)", min_value=0.01, step=0.01)
         bdate = st.date_input("Date", datetime.now())
         if st.form_submit_button("Add", use_container_width=True) and sym and shrs > 0 and bp > 0:
-            client.table("portfolios").insert({
-                "user_id": user_id, "symbol": sym.upper(), "shares": shrs, "buy_price": bp, "buy_date": bdate.strftime("%Y-%m-%d")
-            }).execute()
-            load_portfolio()
-            st.success(f"Added {shrs} × {sym.upper()}"); st.rerun()
+            st.session_state.portfolio['holdings'].append(
+                {'symbol':sym.upper(),'shares':shrs,'buy_price':bp,'buy_date':bdate.strftime("%Y-%m-%d")})
+            save_portfolio(); st.success(f"Added {shrs} × {sym.upper()}"); st.rerun()
 
     st.markdown('<hr style="border-color:rgba(255,255,255,.06);margin:.6rem 0">', unsafe_allow_html=True)
     st.markdown('<div style="font-size:.68rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#4e5669;padding:.1rem .4rem .2rem">Cash Balance</div>', unsafe_allow_html=True)
@@ -310,8 +284,7 @@ with st.sidebar:
 
     st.markdown('<hr style="border-color:rgba(255,255,255,.06);margin:.6rem 0">', unsafe_allow_html=True)
     if st.button("Reset Portfolio", use_container_width=True):
-        client.table("portfolios").delete().eq("user_id", user_id).execute()
-        st.session_state.portfolio = {'holdings':[],'cash_balance':10000.00}; save_portfolio(); load_portfolio(); st.rerun()
+        st.session_state.portfolio = {'holdings':[],'cash_balance':10000.00}; save_portfolio(); st.rerun()
 
 # ── Header ─────────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -499,13 +472,10 @@ if st.session_state.portfolio['holdings']:
                 # Find in session state
                 for h in st.session_state.portfolio['holdings']:
                     if h['symbol'] == sym and abs(h['shares'] - new_qty) > 0.001:
-                        if new_qty == 0:
-                            client.table("portfolios").delete().eq("id", h['id']).execute()
-                        else:
-                            client.table("portfolios").update({"shares": new_qty}).eq("id", h['id']).execute()
+                        h['shares'] = new_qty
                         changed = True
             if changed:
-                load_portfolio()
+                save_portfolio()
                 st.rerun()
 
     # ── Allocation bars ──
