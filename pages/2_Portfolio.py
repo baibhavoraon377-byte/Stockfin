@@ -197,10 +197,7 @@ load_portfolio()
 @st.cache_data(ttl=60)
 def get_price(symbol):
     try:
-        df = yf.Ticker(symbol).history(period="1d")
-        if df.empty:
-            df = yf.Ticker(symbol).history(period="5d")
-        return float(df['Close'].iloc[-1])
+        return yf.Ticker(symbol).history(period="1d")['Close'].iloc[-1]
     except: return None
 
 @st.cache_data(ttl=3600)
@@ -213,18 +210,17 @@ def calc_metrics(holdings):
     total_val = st.session_state.portfolio['cash_balance']
     total_inv = 0
     rows = []
-    for h in holdings:
+    for idx, h in enumerate(holdings):  # FIX: track original index for precise inline-edit matching
         p = get_price(h['symbol'])
-        if p is None:
-            p = float(h.get('buy_price', 0.0))
-        cur  = h['shares'] * p
-        inv  = h['shares'] * h['buy_price']
-        pnl  = cur - inv
-        pnl_ = (pnl / inv) * 100 if inv else 0
-        total_val += cur; total_inv += inv
-        sector = get_sector(h['symbol'])
-        rows.append({**h, 'current_price':p, 'current_value':cur,
-                     'invested':inv, 'pnl':pnl, 'pnl_percent':pnl_, 'allocation':0, 'sector': sector})
+        if p:
+            cur  = h['shares'] * p
+            inv  = h['shares'] * h['buy_price']
+            pnl  = cur - inv
+            pnl_ = (pnl / inv) * 100 if inv else 0
+            total_val += cur; total_inv += inv
+            sector = get_sector(h['symbol'])
+            rows.append({**h, 'holding_idx': idx, 'current_price':p, 'current_value':cur,
+                         'invested':inv, 'pnl':pnl, 'pnl_percent':pnl_, 'allocation':0, 'sector': sector})
     for r in rows: r['allocation'] = (r['current_value']/total_val*100) if total_val else 0
     pnl_total = total_val - (total_inv + st.session_state.portfolio['cash_balance'])
     pnl_pct   = (pnl_total/(total_inv+st.session_state.portfolio['cash_balance'])*100) if (total_inv+st.session_state.portfolio['cash_balance']) else 0
@@ -275,10 +271,31 @@ with st.sidebar:
         shrs  = st.number_input("Shares", min_value=0.01, step=0.01)
         bp    = st.number_input("Buy Price ($)", min_value=0.01, step=0.01)
         bdate = st.date_input("Date", datetime.now())
-        if st.form_submit_button("Add", use_container_width=True) and sym and shrs > 0 and bp > 0:
-            st.session_state.portfolio['holdings'].append(
-                {'symbol':sym.upper(),'shares':shrs,'buy_price':bp,'buy_date':bdate.strftime("%Y-%m-%d")})
-            save_portfolio(); st.success(f"Added {shrs} × {sym.upper()}"); st.rerun()
+        if st.form_submit_button("Add", use_container_width=True):
+            if not sym:
+                st.error("⚠️ Please select a stock from the list.")
+            elif shrs <= 0 or bp <= 0:
+                st.error("⚠️ Shares and buy price must be greater than zero.")
+            elif bp < 0.10:
+                st.error(f"⚠️ Buy price ${bp:.4f} looks suspiciously low — please verify.")
+            else:
+                # FIX: block exact duplicates (same symbol + shares + price + date)
+                is_dup = any(
+                    h['symbol'] == sym.upper() and
+                    h['buy_date'] == bdate.strftime("%Y-%m-%d") and
+                    abs(h['buy_price'] - bp) < 0.001 and
+                    abs(h['shares'] - shrs) < 0.001
+                    for h in st.session_state.portfolio['holdings']
+                )
+                if is_dup:
+                    st.error(f"⚠️ This exact holding already exists (same symbol, shares, price & date).")
+                else:
+                    st.session_state.portfolio['holdings'].append(
+                        {'symbol': sym.upper(), 'shares': shrs, 'buy_price': bp,
+                         'buy_date': bdate.strftime("%Y-%m-%d")})
+                    save_portfolio()
+                    st.success(f"Added {shrs} × {sym.upper()}")
+                    st.rerun()
 
     st.markdown('<hr style="border-color:rgba(255,255,255,.06);margin:.6rem 0">', unsafe_allow_html=True)
     st.markdown('<div style="font-size:.68rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#4e5669;padding:.1rem .4rem .2rem">Cash Balance</div>', unsafe_allow_html=True)
@@ -380,14 +397,11 @@ if st.session_state.portfolio['holdings']:
     st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
     st.markdown('<div style="font-family:\'Syne\',sans-serif;font-size:.85rem;font-weight:700;color:#f0f2f8;margin-bottom:.5rem">Return by Stock</div>', unsafe_allow_html=True)
     perf_df = pd.DataFrame([{'Symbol':m['symbol'],'P&L %':m['pnl_percent']} for m in metrics])
-    if not perf_df.empty:
-        colors  = ['#22d98a' if x >= 0 else '#f05252' for x in perf_df['P&L %']]
-        fig2 = go.Figure(go.Bar(x=perf_df['Symbol'], y=perf_df['P&L %'],
-                                marker_color=colors, marker_line_width=0))
-        fig2.update_layout(height=340, yaxis_title="Return (%)", **DARK_LAYOUT)
-        st.plotly_chart(fig2, use_container_width=True)
-    else:
-        st.info("No active holdings to display return by stock.")
+    colors  = ['#22d98a' if x >= 0 else '#f05252' for x in perf_df['P&L %']]
+    fig2 = go.Figure(go.Bar(x=perf_df['Symbol'], y=perf_df['P&L %'],
+                            marker_color=colors, marker_line_width=0))
+    fig2.update_layout(height=340, yaxis_title="Return (%)", **DARK_LAYOUT)
+    st.plotly_chart(fig2, use_container_width=True)
 
     # ── Interactive Holdings Table ──
     st.markdown('<div style="font-family:\'Syne\',sans-serif;font-size:.85rem;font-weight:700;color:#f0f2f8;margin-bottom:.5rem;margin-top:.3rem">Current Holdings (Interactive)</div>', unsafe_allow_html=True)
@@ -395,10 +409,12 @@ if st.session_state.portfolio['holdings']:
 
     df_grid = pd.DataFrame(metrics)
     if not df_grid.empty:
-        df_grid = df_grid[['symbol', 'shares', 'buy_price', 'current_price', 'invested', 'current_value', 'pnl', 'pnl_percent', 'allocation']]
-        df_grid.columns = ['Ticker', 'Quantity', 'Buy Price', 'Current Price', 'Invested', 'Total Value', 'P&L $', 'P&L %', 'Alloc %']
+        # FIX: include holding_idx so inline edits update the correct row by index
+        df_grid = df_grid[['holding_idx', 'symbol', 'shares', 'buy_price', 'current_price', 'invested', 'current_value', 'pnl', 'pnl_percent', 'allocation']]
+        df_grid.columns = ['_idx', 'Ticker', 'Quantity', 'Buy Price', 'Current Price', 'Invested', 'Total Value', 'P&L $', 'P&L %', 'Alloc %']
 
         gb = GridOptionsBuilder.from_dataframe(df_grid)
+        gb.configure_column("_idx", hide=True)  # FIX: hidden index column for precise row matching
         gb.configure_column("Ticker", pinned='left', width=100)
         gb.configure_column("Quantity", editable=True, type=["numericColumn"], cellEditorPopup=False, width=110)
         gb.configure_column("Buy Price", valueFormatter="data['Buy Price'] ? '$' + Number(data['Buy Price']).toFixed(2) : ''", width=120)
@@ -467,18 +483,20 @@ if st.session_state.portfolio['holdings']:
         st.markdown("</div>", unsafe_allow_html=True)
         
         # Check if quantity was edited
+        # FIX: match by holding_idx (exact row position) instead of symbol name,
+        #      so duplicate symbols each update their own correct row.
         if response['data'] is not None and len(response['data']) > 0:
             updated_df = pd.DataFrame(response['data'])
             changed = False
-            for idx, row in updated_df.iterrows():
-                sym = row['Ticker']
+            for _, row in updated_df.iterrows():
                 try:
+                    holding_idx = int(row['_idx'])
                     new_qty = float(row['Quantity'])
-                except (ValueError, TypeError):
+                except (ValueError, TypeError, KeyError):
                     continue
-                # Find in session state
-                for h in st.session_state.portfolio['holdings']:
-                    if h['symbol'] == sym and abs(h['shares'] - new_qty) > 0.001:
+                if 0 <= holding_idx < len(st.session_state.portfolio['holdings']) and new_qty > 0:
+                    h = st.session_state.portfolio['holdings'][holding_idx]
+                    if abs(h['shares'] - new_qty) > 0.001:
                         h['shares'] = new_qty
                         changed = True
             if changed:
