@@ -224,17 +224,11 @@ STOCK_CATALOGUE = {
 @st.cache_data(ttl=300)
 def fetch_stock_data(symbol: str, period: str = "6mo") -> tuple:
     import random
-    import requests
     
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
-    })
-
     retries = 3
     for attempt in range(retries):
         try:
-            stock = yf.Ticker(symbol, session=session)
+            stock = yf.Ticker(symbol)
             hist  = stock.history(period=period)
             if not hist.empty:
                 try:

@@ -205,16 +205,10 @@ SYMBOL_TO_NAME = {v: k for k, v in STOCK_CATALOGUE.items()}
 def _fetch_with_retry(symbol: str, period: str = "1mo", retries: int = 3) -> dict | None:
     """Fetch stock data with exponential back-off to survive rate limits."""
     import random
-    import requests
     
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
-    })
-
     for attempt in range(retries):
         try:
-            stock = yf.Ticker(symbol, session=session)
+            stock = yf.Ticker(symbol)
             fi = stock.fast_info
 
             # ── Most accurate live price (priority order) ──────────────────
