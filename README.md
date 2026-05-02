@@ -1,7 +1,7 @@
 <div align="center">
   <h1>📈 StockFin</h1>
   <h3>The Ultimate Financial Dashboard & AI-Driven Analytics Platform</h3>
-  <p>StockFin is a high-performance, dark-themed stock market intelligence dashboard designed for modern traders and investors. Built using Python, Streamlit, and advanced Machine Learning, it provides a seamless experience for real-time market monitoring, deep technical analysis, and portfolio tracking.</p>
+  <p>StockFin is a high-performance, dark-themed stock market intelligence dashboard designed for modern traders and investors. Built using Python, Streamlit, and advanced Machine Learning, it provides a seamless experience for real-time market monitoring, deep technical analysis, algorithmic price predictions, and portfolio tracking.</p>
 
   <p>
     <a href="https://streamlit.io/"><img src="https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=Streamlit&logoColor=white" alt="Streamlit"></a>
@@ -14,51 +14,65 @@
 
 ---
 
-## 🌟 Core Modules
+## 🌟 Core Modules & Application Pages
 
-### 🏠 Global Dashboard (`app.py`)
-The command center. Get an instant view of major indices and your favorite stocks via a live ticker grid. Features an interactive main chart with real-time price updates, fundamental company data, and a summary of your portfolio's current health.
+StockFin is structured as a multi-page Streamlit application. Each page acts as a dedicated module for a specific aspect of financial analysis.
 
-### 📈 Advanced Analytics
-A deep-dive technical suite. Features include:
-- **5-Panel Interactive Charts:** Simultaneous view of Price/MAs, RSI, Stochastic, MACD, and OBV.
-- **Pattern Detection:** Automated identification of Double Tops, Head & Shoulders, and Bull Flags using price action algorithms.
-- **Risk Assessment:** Key performance metrics like Sharpe Ratio, Maximum Drawdown, and Beta.
-- **Correlation Engine:** Dynamic heatmap showing how different assets move together.
-- **Price Levels:** Fibonacci retracement analysis for identifying key support and resistance zones.
+### 🏠 1. Global Dashboard (`app.py`)
+The command center. This is the main entry point of the application.
+*   **Live Ticker Grid:** Get an instant view of major indices and your selected favorite stocks with real-time price updates and day-change percentages.
+*   **Market Overview:** Features an interactive 3-panel chart displaying Price/Moving Averages, Volume, and RSI (Relative Strength Index) simultaneously.
+*   **Fundamental Data & Alerts:** Provides essential company profile data, financial metrics (Market Cap, P/E ratio, Beta), and dynamic alerts (e.g., highlighting unusual trading volume or overbought/oversold RSI conditions).
 
-### 💼 Portfolio Management
-A streamlined tracker for your investments.
-- **Real-Time P&L:** Track your unrealized gains and losses as the market moves.
-- **Sector Allocation:** Automatic breakdown of your exposure by industry.
-- **Diversification Analysis:** Visual feedback on your portfolio concentration and risk profile.
-- **Persistence:** Securely saves your holdings to a local JSON database.
+### 📈 2. Advanced Analytics (`pages/1_Analytics.py`)
+A deep-dive technical suite for pattern recognition and advanced charting.
+*   **Technical Analysis:** 5-panel interactive charts allowing simultaneous views of Price, RSI, Stochastic oscillators, MACD, and On-Balance Volume (OBV).
+*   **Risk Assessment:** Calculates key portfolio risk metrics including Annualized Volatility, Sharpe Ratio, Maximum Drawdown, and VaR (Value at Risk).
+*   **Correlation Engine:** Generates dynamic heatmaps showing how different assets move together, which is crucial for portfolio diversification.
+*   **Price Levels:** Automatically calculates Fibonacci retracement levels for identifying key support and resistance zones.
 
-### 🤖 AI-Powered Price Predictions
-Future-casting using state-of-the-art ML models.
-- **Multi-Model Support:** Compare forecasts from **XGBoost**, **Random Forest**, and **Ridge Regression**.
-- **Dynamic Horizons:** Predict price movements for 1-day, 7-day, or 30-day windows.
-- **Training Visualization:** View how models are fitting the data in real-time.
+### 💼 3. Portfolio Management (`pages/2_Portfolio.py`)
+A streamlined tracker for your personal investments.
+*   **Holdings Management:** Add, edit, and remove stock holdings dynamically.
+*   **Real-Time P&L:** Track your unrealized gains and losses as the market moves based on live data.
+*   **Visual Allocation:** Interactive donut charts provide a visual breakdown of your asset allocation and sector distribution.
+*   **Persistence:** Securely saves your holdings to a local JSON database (`portfolio_data.json`) so your data is saved between sessions.
 
-### 🧪 Backtesting Engine
-Validate your trading strategies before risking capital.
-- **Preset Strategies:** SMA Crossover, RSI Mean Reversion, and Bollinger Breakout.
-- **Performance Benchmarking:** Compare strategy returns against a "Buy & Hold" baseline.
-- **Trade Logging:** Detailed summary of every simulated entry and exit.
+### 🤖 4. AI-Powered ML Predictions (`pages/3_ML_Predictions.py`)
+Future-casting using state-of-the-art machine learning models trained on historical data.
+*   **Multi-Model Support:** Train and compare forecasts from **XGBoost**, **Random Forest**, and **Ridge Regression**.
+*   **Dynamic Horizons:** Predict future price movements for flexible 1-day, 7-day, or 30-day windows.
+*   **Training Visualization:** View how the models are fitting the historical data in real-time alongside their future forecasted trajectories to gauge model accuracy.
+
+### 🔔 5. Watchlist & Alerts (`pages/4_Watchlist.py`)
+Monitor potential opportunities without committing capital.
+*   Add stocks to a dedicated watchlist to keep an eye on their daily movements.
+*   Set up specific trigger conditions (e.g., price crosses above a certain moving average).
+
+### 🧪 6. Backtesting Engine (`pages/5_Backtesting.py`)
+Validate your trading strategies against historical data before risking real capital.
+*   **Preset Strategies:** Test popular strategies like SMA Crossover, RSI Mean Reversion, and Bollinger Breakout.
+*   **Performance Benchmarking:** Compare the simulated returns of your chosen strategy against a standard "Buy & Hold" baseline.
+*   **Trade Logging:** Generates a detailed, tabular summary of every simulated entry and exit point.
+
+### 🗺️ 7. Sector Heatmap (`pages/6_Heatmap.py`)
+A macro-level view of the market.
+*   Visualizes the performance of various market sectors (Technology, Healthcare, Finance, etc.) at a glance to identify broader market trends and rotations.
 
 ---
 
-## 🏗️ Technical Architecture
+## 🏗️ Technical Architecture & Data Flow
 
 ```mermaid
 graph TD
-    A[Yahoo Finance API] -->|Real-time & Historical| B(Data Engine)
-    B --> C{Core Processing}
-    C -->|TA-Lib Logic| D[Technical Analysis]
-    C -->|scikit-learn / XGBoost| E[ML Prediction Engine]
+    A[Yahoo Finance API] -->|Real-time & Historical Data| B(Data Fetching Engine)
+    B -->|Sequential Fetch & curl_cffi| C{Core Processing Layer}
+    
+    C -->|Pandas / NumPy| D[Technical Indicators & Math]
+    C -->|Scikit-Learn / XGBoost| E[ML Prediction Engine]
     C -->|P&L Logic| F[Portfolio Suite]
     
-    D --> G[Streamlit UI]
+    D --> G[Streamlit UI & Plotly Charts]
     E --> G
     F --> G
     
@@ -66,6 +80,9 @@ graph TD
     G -->|JSON Persistence| I[(portfolio_data.json)]
     I --> F
 ```
+
+### 🛡️ Solving Cloud Deployment Challenges
+StockFin is designed to run reliably on cloud platforms (like Streamlit Cloud). It actively bypasses Yahoo Finance rate limits and IP bans by utilizing sequential data fetching, exponential back-off retries, and native `curl_cffi` sessions (via `yfinance >= 0.2.40`) to mimic genuine browser traffic.
 
 ---
 
@@ -100,14 +117,6 @@ graph TD
    ```bash
    streamlit run app.py
    ```
-
----
-
-## 📁 Repository Map
-- `app.py`: Main entry point and global dashboard.
-- `pages/`: Individual specialized modules for Analytics, Portfolio, ML, etc.
-- `utils/`: Reusable logic for data fetching, indicator calculation, and premium styling.
-- `data/`: Local storage for portfolio persistence.
 
 ---
 
