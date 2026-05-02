@@ -11,6 +11,7 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import yfinance as yf
 from datetime import datetime, timedelta
+import time
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -222,13 +223,35 @@ STOCK_CATALOGUE = {
 
 @st.cache_data(ttl=300)
 def fetch_stock_data(symbol: str, period: str = "6mo") -> tuple:
-    try:
-        stock = yf.Ticker(symbol)
-        hist = stock.history(period=period)
-        return (hist, stock.info) if not hist.empty else (None, {})
-    except Exception as exc:
-        st.error(f"Error fetching {symbol}: {exc}")
-        return None, {}
+    import random
+    retries = 3
+    for attempt in range(retries):
+        try:
+            stock = yf.Ticker(symbol)
+            hist  = stock.history(period=period)
+            if not hist.empty:
+                try:
+                    info = stock.info
+                except Exception:
+                    info = {}
+                return hist, info
+            # Empty on first try — try 5d fallback then give up
+            hist5 = stock.history(period="5d")
+            if not hist5.empty:
+                try:
+                    info = stock.info
+                except Exception:
+                    info = {}
+                return hist5, info
+            return None, {}
+        except Exception as exc:
+            err = str(exc).lower()
+            if "too many requests" in err or "rate limit" in err or "429" in err:
+                wait = (2 ** attempt) + random.uniform(0.5, 1.5)
+                time.sleep(wait)
+            else:
+                return None, {}
+    return None, {}
 
 
 def calc_indicators(df: pd.DataFrame) -> pd.DataFrame:

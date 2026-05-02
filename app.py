@@ -202,75 +202,90 @@ SYMBOL_TO_NAME = {v: k for k, v in STOCK_CATALOGUE.items()}
 
 # ── Data helpers ─────────────────────────────────────────────────────────────
 
-@st.cache_data(ttl=60)
-def get_live_stock_data(symbol: str, period: str = "1mo") -> dict | None:
-    try:
-        stock = yf.Ticker(symbol)
-        fi = stock.fast_info
-
-        # ── Most accurate live price (priority order) ──────────────────────
-        current_price = None
+def _fetch_with_retry(symbol: str, period: str = "1mo", retries: int = 3) -> dict | None:
+    """Fetch stock data with exponential back-off to survive rate limits."""
+    import random
+    for attempt in range(retries):
         try:
-            current_price = float(fi.last_price)
-        except Exception:
-            pass
-        if not current_price:
-            info = stock.info
-            current_price = (
-                info.get("regularMarketPrice")
-                or info.get("currentPrice")
-                or info.get("previousClose")
-                or 0.0
-            )
-        current_price = float(current_price)
+            stock = yf.Ticker(symbol)
+            fi = stock.fast_info
 
-        # ── Previous close for correct change calculation ──────────────────
-        prev_close = None
-        try:
-            prev_close = float(fi.previous_close)
-        except Exception:
-            pass
-        if not prev_close:
+            # ── Most accurate live price (priority order) ──────────────────
+            current_price = None
             try:
-                prev_close = float(stock.info.get("previousClose") or current_price)
+                current_price = float(fi.last_price)
             except Exception:
-                prev_close = current_price
+                pass
+            if not current_price:
+                info = stock.info
+                current_price = (
+                    info.get("regularMarketPrice")
+                    or info.get("currentPrice")
+                    or info.get("previousClose")
+                    or 0.0
+                )
+            current_price = float(current_price or 0)
 
-        # ── Historical bars for chart ──────────────────────────────────────
-        hist = stock.history(period=period, prepost=True)
-        if hist.empty:
-            return None
+            # ── Previous close for correct change calculation ───────────────
+            prev_close = current_price
+            try:
+                prev_close = float(fi.previous_close) or current_price
+            except Exception:
+                try:
+                    prev_close = float(stock.info.get("previousClose") or current_price)
+                except Exception:
+                    pass
 
-        change = current_price - prev_close
-        change_pct = (change / prev_close * 100) if prev_close else 0.0
+            # ── Historical bars for chart ──────────────────────────────────
+            hist = stock.history(period=period, prepost=True)
+            if hist.empty:
+                # try shorter window as fallback
+                hist = stock.history(period="5d")
+            if hist.empty:
+                return None
 
-        return {
-            "symbol":         symbol,
-            "price":          current_price,
-            "open":           float(hist["Open"].iloc[-1]),
-            "high":           float(hist["High"].iloc[-1]),
-            "low":            float(hist["Low"].iloc[-1]),
-            "volume":         float(hist["Volume"].iloc[-1]),
-            "prev_close":     prev_close,
-            "change":         change,
-            "change_percent": change_pct,
-            "history":        hist,
-            "info":           stock.info,
-        }
-    except Exception as exc:
-        st.warning(f"Could not fetch {symbol}: {exc}")
-        return None
+            change = current_price - prev_close
+            change_pct = (change / prev_close * 100) if prev_close else 0.0
+
+            return {
+                "symbol":         symbol,
+                "price":          current_price,
+                "open":           float(hist["Open"].iloc[-1]),
+                "high":           float(hist["High"].iloc[-1]),
+                "low":            float(hist["Low"].iloc[-1]),
+                "volume":         float(hist["Volume"].iloc[-1]),
+                "prev_close":     prev_close,
+                "change":         change,
+                "change_percent": change_pct,
+                "history":        hist,
+                "info":           getattr(stock, "info", {}),
+            }
+        except Exception as exc:
+            err = str(exc).lower()
+            if "too many requests" in err or "rate limit" in err or "429" in err:
+                wait = (2 ** attempt) + random.uniform(0.5, 1.5)
+                time.sleep(wait)
+            else:
+                # Non-rate-limit error — no point retrying
+                return None
+    return None
+
+@st.cache_data(ttl=120)
+def get_live_stock_data(symbol: str, period: str = "1mo") -> dict | None:
+    return _fetch_with_retry(symbol, period)
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=120)
 def get_multiple_stocks(symbols: tuple, period: str = "1mo") -> dict:
-    import concurrent.futures
+    import concurrent.futures, random
     result = {}
-    
+
+    # Stagger parallel requests to reduce the chance of hitting rate limits
     def _fetch(sym):
-        return sym, get_live_stock_data(sym, period)
-        
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        time.sleep(random.uniform(0.1, 0.6))   # small jitter per thread
+        return sym, _fetch_with_retry(sym, period)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         future_to_sym = {executor.submit(_fetch, sym): sym for sym in symbols}
         for future in concurrent.futures.as_completed(future_to_sym):
             sym, data = future.result()
