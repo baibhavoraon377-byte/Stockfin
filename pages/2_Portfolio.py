@@ -378,7 +378,7 @@ if st.session_state.portfolio['holdings']:
                               marker=dict(line=dict(color='rgba(0,0,0,0)', width=0)))
             fig.update_layout(height=340, showlegend=False, **DARK_LAYOUT)
             fig.update_layout(margin=dict(t=30, b=30, l=30, r=30))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, theme=None)
 
     with cc2:
         st.markdown('<div style="font-family:\'Syne\',sans-serif;font-size:.85rem;font-weight:700;color:#f0f2f8;margin-bottom:.5rem">Sector Allocation</div>', unsafe_allow_html=True)
@@ -392,7 +392,7 @@ if st.session_state.portfolio['holdings']:
                                marker=dict(line=dict(color='rgba(0,0,0,0)', width=0)))
             fig_sec.update_layout(height=340, showlegend=False, **DARK_LAYOUT)
             fig_sec.update_layout(margin=dict(t=30, b=30, l=30, r=30))
-            st.plotly_chart(fig_sec, use_container_width=True)
+            st.plotly_chart(fig_sec, use_container_width=True, theme=None)
 
     st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
     st.markdown('<div style="font-family:\'Syne\',sans-serif;font-size:.85rem;font-weight:700;color:#f0f2f8;margin-bottom:.5rem">Return by Stock</div>', unsafe_allow_html=True)
@@ -401,7 +401,7 @@ if st.session_state.portfolio['holdings']:
     fig2 = go.Figure(go.Bar(x=perf_df['Symbol'], y=perf_df['P&L %'],
                             marker_color=colors, marker_line_width=0))
     fig2.update_layout(height=340, yaxis_title="Return (%)", **DARK_LAYOUT)
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, use_container_width=True, theme=None)
 
     # ── Interactive Holdings Table ──
     st.markdown('<div style="font-family:\'Syne\',sans-serif;font-size:.85rem;font-weight:700;color:#f0f2f8;margin-bottom:.5rem;margin-top:.3rem">Current Holdings (Interactive)</div>', unsafe_allow_html=True)
@@ -423,12 +423,12 @@ if st.session_state.portfolio['holdings']:
         gb.configure_column("Total Value", valueFormatter="data['Total Value'] ? '$' + Number(data['Total Value']).toFixed(0) : ''", width=120)
         
         gb.configure_column("P&L $", 
-            cellStyle=JsCode("function(params) { return {color: params.value >= 0 ? '#22d98a' : '#f05252', fontWeight: '600'}; }"),
+            cellStyle=JsCode("function(params) { return {color: params.value >= 0 ? '#00ffa3' : '#ff4d4d', fontWeight: '600'}; }"),
             valueFormatter="data['P&L $'] ? (data['P&L $'] > 0 ? '+' : '') + Number(data['P&L $']).toFixed(2) : ''",
             width=110
         )
         gb.configure_column("P&L %", 
-            cellStyle=JsCode("function(params) { return {color: params.value >= 0 ? '#22d98a' : '#f05252', fontWeight: '600'}; }"),
+            cellStyle=JsCode("function(params) { return {color: params.value >= 0 ? '#00ffa3' : '#ff4d4d', fontWeight: '600'}; }"),
             valueFormatter="data['P&L %'] ? (data['P&L %'] > 0 ? '+' : '') + Number(data['P&L %']).toFixed(2) + '%' : ''",
             width=110
         )
@@ -470,14 +470,16 @@ if st.session_state.portfolio['holdings']:
             allow_unsafe_jscode=True,
             theme="alpine",
             custom_css={
-                ".ag-root-wrapper": {"background-color": "var(--bg-card) !important", "border": "1px solid var(--border) !important", "border-radius": "14px", "overflow": "hidden"},
-                ".ag-header": {"background-color": "rgba(255,255,255,0.03) !important", "border-bottom": "1px solid var(--border) !important"},
-                ".ag-header-cell-label": {"color": "var(--text-secondary) !important", "font-weight": "600", "font-family": "'Syne', sans-serif", "font-size": "0.72rem", "text-transform": "uppercase", "letter-spacing": "0.05em"},
-                ".ag-row": {"background-color": "transparent !important", "border-bottom": "1px solid rgba(255,255,255,0.03) !important", "color": "var(--text-primary) !important"},
+                ".ag-root-wrapper": {"background-color": "var(--bg-card) !important", "border": "1px solid rgba(255,255,255,0.1) !important", "border-radius": "14px", "overflow": "hidden"},
+                ".ag-header": {"background-color": "rgba(19, 22, 30, 0.95) !important", "border-bottom": "1px solid rgba(255,255,255,0.1) !important"},
+                ".ag-header-cell-label": {"color": "#f0f2f8 !important", "font-weight": "600", "font-family": "'Syne', sans-serif", "font-size": "0.72rem", "text-transform": "uppercase", "letter-spacing": "0.05em"},
+                ".ag-row": {"background-color": "transparent !important", "border-bottom": "1px solid rgba(255,255,255,0.1) !important", "color": "#f0f2f8 !important"},
+                ".ag-row-odd": {"background-color": "rgba(255,255,255,0.02) !important"},
+                ".ag-row-even": {"background-color": "transparent !important"},
                 ".ag-row-hover": {"background-color": "rgba(255,255,255,0.05) !important"},
-                ".ag-cell": {"font-family": "'DM Sans', sans-serif", "font-size": "0.85rem", "display": "flex", "align-items": "center"},
-                ".ag-cell-value": {"color": "var(--text-primary)"},
-                ".ag-paging-panel": {"background-color": "transparent !important", "border-top": "1px solid var(--border) !important", "color": "var(--text-secondary) !important"},
+                ".ag-cell": {"color": "#f0f2f8 !important", "font-family": "'DM Sans', sans-serif", "font-size": "0.85rem", "display": "flex", "align-items": "center"},
+                ".ag-cell-value": {"color": "#f0f2f8 !important"},
+                ".ag-paging-panel": {"background-color": "transparent !important", "border-top": "1px solid rgba(255,255,255,0.1) !important", "color": "var(--text-secondary) !important"},
             }
         )
         st.markdown("</div>", unsafe_allow_html=True)
@@ -554,7 +556,7 @@ if st.session_state.portfolio['holdings']:
                               line=dict(color='#4f8fff', width=2),
                               fill='tozeroy', fillcolor='rgba(79,143,255,.08)'))
     fig3.update_layout(height=280, yaxis_title="Index (base 100)", **DARK_LAYOUT)
-    st.plotly_chart(fig3, use_container_width=True)
+    st.plotly_chart(fig3, use_container_width=True, theme=None)
 
 else:
     st.markdown("""

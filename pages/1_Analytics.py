@@ -504,7 +504,7 @@ with tab1:
     )
     for ann in fig.layout.annotations:
         ann.font.size = 10; ann.font.color = "#8892a4"
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, theme=None)
 
     ic1, ic2, ic3, ic4 = st.columns(4)
     rsi_v = float(df["RSI"].iloc[-1])
@@ -564,15 +564,17 @@ with tab_options:
             return 0.0, 0.0
 
     _opt_css = {
-        ".ag-root-wrapper": {"background-color": "var(--bg-card) !important", "border": "1px solid var(--border) !important", "border-radius": "14px", "overflow": "hidden"},
-        ".ag-header": {"background-color": "rgba(255,255,255,0.03) !important", "border-bottom": "1px solid var(--border) !important"},
-        ".ag-header-group-cell-label": {"color": "var(--text-primary) !important", "font-weight": "700", "font-family": "'Syne', sans-serif", "font-size": "0.85rem", "justify-content": "center"},
-        ".ag-header-cell-label": {"color": "var(--text-secondary) !important", "font-weight": "600", "font-family": "'Syne', sans-serif", "font-size": "0.72rem", "text-transform": "uppercase", "letter-spacing": "0.05em", "justify-content": "center"},
-        ".ag-row": {"background-color": "transparent !important", "border-bottom": "1px solid rgba(255,255,255,0.03) !important", "color": "var(--text-primary) !important"},
+        ".ag-root-wrapper": {"background-color": "var(--bg-card) !important", "border": "1px solid rgba(255,255,255,0.1) !important", "border-radius": "14px", "overflow": "hidden"},
+        ".ag-header": {"background-color": "rgba(19, 22, 30, 0.95) !important", "border-bottom": "1px solid rgba(255,255,255,0.1) !important"},
+        ".ag-header-group-cell-label": {"color": "#f0f2f8 !important", "font-weight": "700", "font-family": "'Syne', sans-serif", "font-size": "0.85rem", "justify-content": "center"},
+        ".ag-header-cell-label": {"color": "#f0f2f8 !important", "font-weight": "600", "font-family": "'Syne', sans-serif", "font-size": "0.72rem", "text-transform": "uppercase", "letter-spacing": "0.05em", "justify-content": "center"},
+        ".ag-row": {"background-color": "transparent !important", "border-bottom": "1px solid rgba(255,255,255,0.1) !important", "color": "#f0f2f8 !important"},
+        ".ag-row-odd": {"background-color": "rgba(255,255,255,0.02) !important"},
+        ".ag-row-even": {"background-color": "transparent !important"},
         ".ag-row-hover": {"background-color": "rgba(255,255,255,0.05) !important"},
-        ".ag-cell": {"font-family": "'DM Sans', sans-serif", "font-size": "0.85rem", "display": "flex", "align-items": "center", "justify-content": "center", "border-right": "1px solid rgba(255,255,255,0.02)"},
-        ".ag-cell-value": {"color": "var(--text-primary) !important"},
-        ".ag-paging-panel": {"background-color": "transparent !important", "border-top": "1px solid var(--border) !important", "color": "var(--text-secondary) !important"},
+        ".ag-cell": {"color": "#f0f2f8 !important", "font-family": "'DM Sans', sans-serif", "font-size": "0.85rem", "display": "flex", "align-items": "center", "justify-content": "center", "border-right": "1px solid rgba(255,255,255,0.02)"},
+        ".ag-cell-value": {"color": "#f0f2f8 !important"},
+        ".ag-paging-panel": {"background-color": "transparent !important", "border-top": "1px solid rgba(255,255,255,0.1) !important", "color": "var(--text-secondary) !important"},
     }
 
     try:
@@ -636,8 +638,8 @@ with tab_options:
                 
                 gb = GridOptionsBuilder.from_dataframe(display)
                 
-                call_bg = "function(p){if(p.data.C_ITM===true){return {backgroundColor:'rgba(34,217,138,0.08)'}}; return null;}"
-                put_bg  = "function(p){if(p.data.P_ITM===true){return {backgroundColor:'rgba(240,82,82,0.08)'}}; return null;}"
+                call_bg = "function(p){if(p.data.C_ITM===true){return {backgroundColor:'rgba(0,255,163,0.08)'}}; return null;}"
+                put_bg  = "function(p){if(p.data.P_ITM===true){return {backgroundColor:'rgba(255,77,77,0.08)'}}; return null;}"
                 
                 def fmt_num(field, decimals=2, fallback="'—'"): return f"data.{field} != null && !isNaN(data.{field}) ? Number(data.{field}).toFixed({decimals}) : {fallback}"
                 def fmt_vol(field): return f"data.{field} != null && !isNaN(data.{field}) ? Number(data.{field}).toLocaleString() : '0'"
@@ -647,8 +649,8 @@ with tab_options:
                 gb.configure_column("C_Vol",    headerName="VOL",   valueFormatter=fmt_vol("C_Vol"), width=75, minWidth=65, cellStyle=JsCode(call_bg))
                 gb.configure_column("C_IV_pct", headerName="IV %",  valueFormatter=f"data.C_IV_pct != null && !isNaN(data.C_IV_pct) ? Number(data.C_IV_pct).toFixed(1)+'%' : '—'", width=75, minWidth=65, cellStyle=JsCode(call_bg))
                 gb.configure_column("C_Theta",  headerName="Theta", valueFormatter=fmt_num("C_Theta",4), width=80, minWidth=70, cellStyle=JsCode(f"function(p){{ let s = ({call_bg})(p) || {{}}; s.color = '#f5a623'; return s; }}"))
-                gb.configure_column("C_Delta",  headerName="Delta", valueFormatter=fmt_num("C_Delta",3), width=80, minWidth=70, cellStyle=JsCode(f"function(p){{ let s = ({call_bg})(p) || {{}}; let v=p.value; s.color=v>0?'#22d98a':v<0?'#f05252':'#8892a4'; return s; }}"))
-                gb.configure_column("C_Last",   headerName="LTP",   valueFormatter=fmt_num("C_Last"), width=80, minWidth=75, cellStyle=JsCode(f"function(p){{ let s = ({call_bg})(p) || {{}}; s.color = 'var(--text-primary)'; s.fontWeight='600'; return s; }}"))
+                gb.configure_column("C_Delta",  headerName="Delta", valueFormatter=fmt_num("C_Delta",3), width=80, minWidth=70, cellStyle=JsCode(f"function(p){{ let s = ({call_bg})(p) || {{}}; let v=p.value; s.color=v>0?'#00ffa3':v<0?'#ff4d4d':'#8892a4'; return s; }}"))
+                gb.configure_column("C_Last",   headerName="LTP",   valueFormatter=fmt_num("C_Last"), width=80, minWidth=75, cellStyle=JsCode(f"function(p){{ let s = ({call_bg})(p) || {{}}; s.color = '#f0f2f8'; s.fontWeight='600'; return s; }}"))
                 gb.configure_column("C_Bid",    headerName="BID",   valueFormatter=fmt_num("C_Bid"), width=80, minWidth=75, cellStyle=JsCode(call_bg))
                 gb.configure_column("C_Ask",    headerName="ASK",   valueFormatter=fmt_num("C_Ask"), width=80, minWidth=75, cellStyle=JsCode(call_bg))
                 gb.configure_column("C_ITM",    hide=True)
@@ -659,8 +661,8 @@ with tab_options:
                 # Puts cols
                 gb.configure_column("P_Bid",    headerName="BID",   valueFormatter=fmt_num("P_Bid"), width=80, minWidth=75, cellStyle=JsCode(put_bg))
                 gb.configure_column("P_Ask",    headerName="ASK",   valueFormatter=fmt_num("P_Ask"), width=80, minWidth=75, cellStyle=JsCode(put_bg))
-                gb.configure_column("P_Last",   headerName="LTP",   valueFormatter=fmt_num("P_Last"), width=80, minWidth=75, cellStyle=JsCode(f"function(p){{ let s = ({put_bg})(p) || {{}}; s.color = 'var(--text-primary)'; s.fontWeight='600'; return s; }}"))
-                gb.configure_column("P_Delta",  headerName="Delta", valueFormatter=fmt_num("P_Delta",3), width=80, minWidth=70, cellStyle=JsCode(f"function(p){{ let s = ({put_bg})(p) || {{}}; let v=p.value; s.color=v>0?'#22d98a':v<0?'#f05252':'#8892a4'; return s; }}"))
+                gb.configure_column("P_Last",   headerName="LTP",   valueFormatter=fmt_num("P_Last"), width=80, minWidth=75, cellStyle=JsCode(f"function(p){{ let s = ({put_bg})(p) || {{}}; s.color = '#f0f2f8'; s.fontWeight='600'; return s; }}"))
+                gb.configure_column("P_Delta",  headerName="Delta", valueFormatter=fmt_num("P_Delta",3), width=80, minWidth=70, cellStyle=JsCode(f"function(p){{ let s = ({put_bg})(p) || {{}}; let v=p.value; s.color=v>0?'#00ffa3':v<0?'#ff4d4d':'#8892a4'; return s; }}"))
                 gb.configure_column("P_Theta",  headerName="Theta", valueFormatter=fmt_num("P_Theta",4), width=80, minWidth=70, cellStyle=JsCode(f"function(p){{ let s = ({put_bg})(p) || {{}}; s.color = '#f5a623'; return s; }}"))
                 gb.configure_column("P_IV_pct", headerName="IV %",  valueFormatter=f"data.P_IV_pct != null && !isNaN(data.P_IV_pct) ? Number(data.P_IV_pct).toFixed(1)+'%' : '—'", width=75, minWidth=65, cellStyle=JsCode(put_bg))
                 gb.configure_column("P_Vol",    headerName="VOL",   valueFormatter=fmt_vol("P_Vol"), width=75, minWidth=65, cellStyle=JsCode(put_bg))
@@ -768,7 +770,7 @@ with tab2:
         height=300, title="Historical Volatility (20-day)",
         title_font=dict(family="Syne", size=13, color="#f0f2f8"), **DARK_LAYOUT,
     )
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, use_container_width=True, theme=None)
 
 # ── Tab 3 — Correlation ───────────────────────────────────────────────────────
 with tab3:
@@ -789,7 +791,7 @@ with tab3:
                 height=400,
                 title_font=dict(family="Syne", size=13, color="#f0f2f8"), **DARK_LAYOUT,
             )
-            st.plotly_chart(fig3, use_container_width=True)
+            st.plotly_chart(fig3, use_container_width=True, theme=None)
             for sym in compare_stocks:
                 if sym in corr.columns:
                     cv = float(corr.loc[stock_symbol, sym])
@@ -854,7 +856,7 @@ with tab4:
         height=400, title="Fibonacci Retracement Levels",
         title_font=dict(family="Syne", size=13, color="#f0f2f8"), **DARK_LAYOUT,
     )
-    st.plotly_chart(fig4, use_container_width=True)
+    st.plotly_chart(fig4, use_container_width=True, theme=None)
 
 # ── Tab 5 — AI Signals ────────────────────────────────────────────────────────
 with tab5:
