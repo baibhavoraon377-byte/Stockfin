@@ -273,8 +273,8 @@ def _fetch_with_retry(symbol: str, period: str = "1mo", retries: int = 3) -> dic
                 wait = (2 ** attempt) + random.uniform(0.5, 1.5)
                 time.sleep(wait)
             else:
-                return None
-    return None
+                return {"symbol": symbol, "error": str(exc)}
+    return {"symbol": symbol, "error": "Max retries exceeded"}
 
 @st.cache_data(ttl=120)
 def get_live_stock_data(symbol: str, period: str = "1mo") -> dict | None:
@@ -283,20 +283,16 @@ def get_live_stock_data(symbol: str, period: str = "1mo") -> dict | None:
 
 @st.cache_data(ttl=120)
 def get_multiple_stocks(symbols: tuple, period: str = "1mo") -> dict:
-    import concurrent.futures, random
+    import time
     result = {}
 
-    # Stagger parallel requests to reduce the chance of hitting rate limits
-    def _fetch(sym):
-        time.sleep(random.uniform(0.1, 0.6))   # small jitter per thread
-        return sym, _fetch_with_retry(sym, period)
+    # Fetch sequentially to avoid parallel rate-limiting bans from Yahoo Finance
+    for sym in symbols:
+        data = _fetch_with_retry(sym, period)
+        if data:
+            result[sym] = data
+        time.sleep(0.5) # small delay between requests
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-        future_to_sym = {executor.submit(_fetch, sym): sym for sym in symbols}
-        for future in concurrent.futures.as_completed(future_to_sym):
-            sym, data = future.result()
-            if data:
-                result[sym] = data
     return result
 
 
@@ -466,9 +462,24 @@ stocks_data = get_multiple_stocks(tuple(selected_stocks), chart_period)
 
 placeholder.empty()
 
-if not stocks_data:
-    st.error("No stock data could be fetched. Check your internet connection and try again.")
+valid_stocks = {}
+errors = []
+
+for sym, data in stocks_data.items():
+    if "error" in data:
+        errors.append(f"{sym}: {data['error']}")
+    else:
+        valid_stocks[sym] = data
+
+if errors:
+    for e in errors:
+        st.error(f"Failed to load {e}")
+
+if not valid_stocks:
+    st.error("No valid stock data could be fetched. Check your internet connection or try again later.")
     st.stop()
+
+stocks_data = valid_stocks
 
 # ── Ticker grid ───────────────────────────────────────────────────────────────
 st.markdown(
