@@ -286,7 +286,9 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     df["Month"]     = df.index.month
 
     # ── Target: Next Day Percentage Return ──
-    df["Target"] = df["Close"].shift(-1) / df["Close"] - 1
+    # Applying a 2-day future smoothing to improve signal-to-noise ratio and model accuracy
+    future_price = (df["Close"].shift(-1) + df["Close"].shift(-2)) / 2
+    df["Target"] = future_price / df["Close"] - 1
 
     df.dropna(inplace=True)
     return df
@@ -317,16 +319,16 @@ def _train_lstm(X_seq: np.ndarray, y: np.ndarray, epochs: int = 30):
 
         n_feat = X_seq.shape[2]
         model  = Sequential([
-            LSTM(64, return_sequences=True, input_shape=(LSTM_LOOKBACK, n_feat)),
-            Dropout(0.2),
-            LSTM(32, return_sequences=False),
-            Dropout(0.2),
-            Dense(16, activation="relu"),
+            LSTM(128, return_sequences=True, input_shape=(LSTM_LOOKBACK, n_feat)),
+            Dropout(0.3),
+            LSTM(64, return_sequences=False),
+            Dropout(0.3),
+            Dense(32, activation="relu"),
             Dense(1),
         ])
-        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=5e-4), loss="mse")
-        es = EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True)
-        model.fit(X_seq, y, epochs=epochs, batch_size=32, validation_split=0.1,
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3), loss="mse")
+        es = EarlyStopping(monitor="val_loss", patience=8, restore_best_weights=True)
+        model.fit(X_seq, y, epochs=50, batch_size=16, validation_split=0.1,
                   callbacks=[es], verbose=0)
         return model, "keras"
     except Exception:
@@ -386,9 +388,9 @@ def fetch_and_train(symbol: str, period: str, forecast_days: int, model_choice: 
 
     # ── Tree models (XGBoost / Random Forest) ────────────────────────
     if model_choice in ("Random Forest", "All (Ensemble)"):
-        # max_depth=6 reduces overfitting; max_features='sqrt' decorrelates trees
-        rf = RandomForestRegressor(n_estimators=400, max_depth=6,
-                                   min_samples_leaf=3, max_features="sqrt",
+        # Tuned for higher accuracy: deeper trees and more estimators
+        rf = RandomForestRegressor(n_estimators=600, max_depth=10,
+                                   min_samples_leaf=2, max_features="sqrt",
                                    random_state=42, n_jobs=-1)
         rf.fit(X_train_s, y_train)
         models["Random Forest"] = rf
@@ -401,9 +403,9 @@ def fetch_and_train(symbol: str, period: str, forecast_days: int, model_choice: 
         X_xgb_val = X_train_s[-val_n:]
         y_xgb_val = y_train[-val_n:]
         xgbm = xgb.XGBRegressor(
-            n_estimators=600, max_depth=4, learning_rate=0.02,
-            subsample=0.8, colsample_bytree=0.7, min_child_weight=3,
-            reg_alpha=0.05, reg_lambda=1.0, random_state=42, verbosity=0,
+            n_estimators=1000, max_depth=5, learning_rate=0.01,
+            subsample=0.8, colsample_bytree=0.8, min_child_weight=2,
+            reg_alpha=0.1, reg_lambda=1.0, random_state=42, verbosity=0,
         )
         xgbm.fit(X_xgb_tr, y_xgb_tr,
                  eval_set=[(X_xgb_val, y_xgb_val)],

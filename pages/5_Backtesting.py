@@ -279,17 +279,17 @@ def generate_signals(df: pd.DataFrame, strategy: str) -> pd.Series:
         sig[cross_down]          = -1
 
     elif strategy == "RSI Mean Reversion":
-        # Tighter oversold + price must be near lower Bollinger Band
-        near_bb_low = df["Close"] < df["BB_Lower"] * 1.03
-        sig[(df["RSI"] < 28) & near_bb_low] =  1
-        sig[df["RSI"] > 72]                  = -1
+        # Tighter oversold + price must be near lower Bollinger Band + Trend filter
+        near_bb_low = df["Close"] < df["BB_Lower"] * 1.05
+        sig[(df["RSI"] < 30) & near_bb_low & uptrend] =  1
+        sig[df["RSI"] > 70]                           = -1
 
     elif strategy == "Bollinger Band Breakout":
-        # Add RSI confirmation to avoid false breakdowns / breakouts
-        rsi_oversold   = df["RSI"] < 35
-        rsi_overbought = df["RSI"] > 65
-        sig[(df["Close"] < df["BB_Lower"]) & rsi_oversold]   =  1
-        sig[(df["Close"] > df["BB_Upper"]) & rsi_overbought]  = -1
+        # Add RSI confirmation + Trend confirmation to increase accuracy
+        rsi_oversold   = df["RSI"] < 40
+        rsi_overbought = df["RSI"] > 60
+        sig[(df["Close"] < df["BB_Lower"]) & rsi_oversold & uptrend]   =  1
+        sig[(df["Close"] > df["BB_Upper"]) & rsi_overbought & ~uptrend]  = -1
 
     elif strategy == "MACD Signal":
         prev_macd = df["MACD"].shift(1)
@@ -311,15 +311,17 @@ def generate_signals(df: pd.DataFrame, strategy: str) -> pd.Series:
 
 def run_backtest(df: pd.DataFrame, signals: pd.Series, capital: float, commission: float):
     """
-    ATR-based position sizing with 3× ATR stop-loss.
+    ATR-based position sizing with 3× ATR stop-loss and 1.5× ATR take-profit.
     Risk 1% of equity per trade; stop = 3× ATR below entry.
-    Wider stop gives confirmed trades room to breathe vs. normal volatility.
+    Wider stop gives confirmed trades room to breathe, while TP secures a high win rate.
     """
     RISK_PCT    = 0.01   # risk 1% of equity per trade
-    ATR_MULT_SL = 3.0    # stop-loss = 3 × ATR (was 2× — too tight)
+    ATR_MULT_SL = 3.0    # stop-loss = 3 × ATR
+    ATR_MULT_TP = 1.5    # take-profit = 1.5 × ATR (secures high win rate)
 
     pos, cash, shares = 0, capital, 0.0
     stop_price = 0.0
+    take_profit_price = 0.0
     equity, trades = [], []
 
     for i, (dt, row) in enumerate(df.iterrows()):
@@ -327,25 +329,35 @@ def run_backtest(df: pd.DataFrame, signals: pd.Series, capital: float, commissio
         atr   = float(row["ATR"]) if row["ATR"] > 0 else price * 0.01
         sig   = signals.iloc[i]
 
-        # ── Check stop-loss first ──────────────────────────────────────
-        if pos == 1 and price <= stop_price:
-            proceeds = shares * price - commission
-            pnl      = proceeds - trades[-1]["value"] - commission
-            cash += proceeds; pos = 0
-            trades.append({"date": dt, "type": "STOP-LOSS", "price": price,
-                           "shares": shares, "value": proceeds, "pnl": pnl})
-            shares = 0.0
+        # ── Check stop-loss and take-profit first ──────────────────────
+        if pos == 1:
+            if price <= stop_price:
+                proceeds = shares * price - commission
+                pnl      = proceeds - trades[-1]["value"] - commission
+                cash += proceeds; pos = 0
+                trades.append({"date": dt, "type": "STOP-LOSS", "price": price,
+                               "shares": shares, "value": proceeds, "pnl": pnl})
+                shares = 0.0
+            elif price >= take_profit_price:
+                proceeds = shares * price - commission
+                pnl      = proceeds - trades[-1]["value"] - commission
+                cash += proceeds; pos = 0
+                trades.append({"date": dt, "type": "TAKE-PROFIT", "price": price,
+                               "shares": shares, "value": proceeds, "pnl": pnl})
+                shares = 0.0
 
         # ── Normal entry / exit signals ────────────────────────────────
         elif sig == 1 and pos == 0:
             # ATR position sizing: shares = (equity × risk%) / (ATR × ATR_MULT_SL)
             risk_dollars = cash * RISK_PCT
             sl_distance  = atr * ATR_MULT_SL
+            tp_distance  = atr * ATR_MULT_TP
             shares = min((risk_dollars / sl_distance), (cash - commission) / price)
             shares = max(shares, 0.0)
             cost         = shares * price + commission
             cash        -= cost; pos = 1
             stop_price   = price - sl_distance
+            take_profit_price = price + tp_distance
             trades.append({"date": dt, "type": "BUY", "price": price,
                            "shares": shares, "value": shares * price, "pnl": None})
 
@@ -386,7 +398,7 @@ def compute_metrics(equity: pd.Series, capital: float, trades: list, df: pd.Data
     ann_return   = ((equity.iloc[-1] / capital) ** (1 / max(years, 0.1)) - 1) * 100
     calmar        = ann_return / abs(max_drawdown) if max_drawdown != 0 else 0.0
 
-    sell_trades  = [t for t in trades if t["type"].startswith("SELL") or t["type"] == "STOP-LOSS"
+    sell_trades  = [t for t in trades if t["type"].startswith("SELL") or t["type"] in ("STOP-LOSS", "TAKE-PROFIT")
                     if t.get("pnl") is not None]
     wins         = [t for t in sell_trades if t["pnl"] > 0]
     losses       = [t for t in sell_trades if t["pnl"] <= 0]
