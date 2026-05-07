@@ -304,8 +304,8 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     df["CCI"] = ((tp - sma_tp) / (0.015 * mad.replace(0, np.nan))).fillna(0)
 
     # ── Target: Next Day Percentage Return ──
-    # Applying a 3-day future smoothing to filter noise and improve direction accuracy
-    future_price = (df["Close"].shift(-1) + df["Close"].shift(-2) + df["Close"].shift(-3)) / 3
+    # Light smoothing: average of next 2 days to reduce noise but maintain variance
+    future_price = (df["Close"].shift(-1) + df["Close"].shift(-2)) / 2
     df["Target"] = future_price / df["Close"] - 1
 
     df.dropna(inplace=True)
@@ -337,10 +337,10 @@ def _train_lstm(X_seq: np.ndarray, y: np.ndarray, epochs: int = 30):
 
         n_feat = X_seq.shape[2]
         model  = Sequential([
-            LSTM(128, return_sequences=True, input_shape=(LSTM_LOOKBACK, n_feat), kernel_regularizer=tf.keras.regularizers.l2(0.001)),
-            Dropout(0.4),
-            LSTM(64, return_sequences=False, kernel_regularizer=tf.keras.regularizers.l2(0.001)),
-            Dropout(0.4),
+            LSTM(128, return_sequences=True, input_shape=(LSTM_LOOKBACK, n_feat)),
+            Dropout(0.3),
+            LSTM(64, return_sequences=False),
+            Dropout(0.3),
             Dense(32, activation="relu"),
             Dense(1),
         ])
@@ -406,9 +406,9 @@ def fetch_and_train(symbol: str, period: str, forecast_days: int, model_choice: 
 
     # ── Tree models (XGBoost / Random Forest) ────────────────────────
     if model_choice in ("Random Forest", "All (Ensemble)"):
-        # Tuned for higher accuracy: heavy generalization
-        rf = RandomForestRegressor(n_estimators=1000, max_depth=12,
-                                   min_samples_leaf=4, max_features="log2",
+        # Balanced for steady generalization
+        rf = RandomForestRegressor(n_estimators=300, max_depth=6,
+                                   min_samples_leaf=5, max_features="sqrt",
                                    random_state=42, n_jobs=-1)
         rf.fit(X_train_s, y_train)
         models["Random Forest"] = rf
@@ -421,9 +421,9 @@ def fetch_and_train(symbol: str, period: str, forecast_days: int, model_choice: 
         X_xgb_val = X_train_s[-val_n:]
         y_xgb_val = y_train[-val_n:]
         xgbm = xgb.XGBRegressor(
-            n_estimators=800, max_depth=4, learning_rate=0.03,
+            n_estimators=300, max_depth=4, learning_rate=0.05,
             subsample=0.8, colsample_bytree=0.8, min_child_weight=3,
-            reg_alpha=1.0, reg_lambda=5.0, random_state=42, verbosity=0,
+            reg_alpha=0.5, reg_lambda=2.0, random_state=42, verbosity=0,
         )
         xgbm.fit(X_xgb_tr, y_xgb_tr,
                  eval_set=[(X_xgb_val, y_xgb_val)],

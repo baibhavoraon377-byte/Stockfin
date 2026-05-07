@@ -279,57 +279,45 @@ def generate_signals(df: pd.DataFrame, strategy: str) -> pd.Series:
     # ── Shared boolean masks ──────────────────────────────────────────────
     uptrend = df["Close"] > df["MA200"]          # macro trend filter
     vol_ok  = df["Volume"] > df["Volume_MA20"]   # above-average volume
-    strong_trend = df["ADX"] > 25                # trending market
-    ranging_market = df["ADX"] <= 25             # choppy/ranging market
 
     if strategy == "SMA Crossover (20/50)":
         prev = df["MA20v50_x"].shift(1)
         cross_up   = (df["MA20v50_x"] == 1) & (prev == 0)
         cross_down = (df["MA20v50_x"] == 0) & (prev == 1)
-        # Long only in macro uptrend and strong trend; exit on any cross-down
-        sig[cross_up & uptrend & strong_trend] =  1
-        sig[cross_down]                        = -1
+        sig[cross_up & uptrend] =  1
+        sig[cross_down]         = -1
 
     elif strategy == "RSI Mean Reversion":
-        # Tighter oversold + price must be near lower Bollinger Band + ranging market
-        near_bb_low = df["Close"] < df["BB_Lower"] * 1.05
-        sig[(df["RSI"] < 25) & near_bb_low & uptrend & ranging_market] =  1
-        sig[df["RSI"] > 75]                                            = -1
+        # Standard oversold RSI + Trend filter
+        sig[(df["RSI"] < 30) & uptrend] =  1
+        sig[df["RSI"] > 70]             = -1
 
     elif strategy == "Bollinger Band Breakout":
-        # Add RSI confirmation + Ranging confirmation to increase accuracy
-        rsi_oversold   = df["RSI"] < 35
-        rsi_overbought = df["RSI"] > 65
-        sig[(df["Close"] < df["BB_Lower"]) & rsi_oversold & uptrend & ranging_market]  =  1
-        sig[(df["Close"] > df["BB_Upper"]) & rsi_overbought & ~uptrend]                = -1
+        sig[(df["Close"] < df["BB_Lower"]) & uptrend]  =  1
+        sig[(df["Close"] > df["BB_Upper"]) & ~uptrend] = -1
 
     elif strategy == "MACD Signal":
         prev_macd = df["MACD"].shift(1)
         prev_s    = df["Signal"].shift(1)
-        # MACD crosses up AND histogram is growing AND strong trend
-        hist_up   = (df["MACD_hist"] > 0) & (df["MACD_hist"] > df["MACD_hist"].shift(1))
-        hist_down = (df["MACD_hist"] < 0) & (df["MACD_hist"] < df["MACD_hist"].shift(1))
-        sig[(df["MACD"] > df["Signal"]) & (prev_macd <= prev_s) & hist_up & strong_trend]   =  1
-        sig[(df["MACD"] < df["Signal"]) & (prev_macd >= prev_s) & hist_down]                = -1
+        sig[(df["MACD"] > df["Signal"]) & (prev_macd <= prev_s) & uptrend] =  1
+        sig[(df["MACD"] < df["Signal"]) & (prev_macd >= prev_s)]           = -1
 
     elif strategy == "Momentum (ROC)":
-        # RSI in healthy zone + macro uptrend + volume surge + strong trend
-        healthy_rsi = (df["RSI"] >= 45) & (df["RSI"] <= 68)
-        sig[(df["ROC20"] > 5)  & healthy_rsi & uptrend & vol_ok & strong_trend] =  1
-        sig[(df["ROC20"] < -5) & ~uptrend]                                      = -1
+        sig[(df["ROC20"] > 5)  & uptrend & vol_ok] =  1
+        sig[(df["ROC20"] < -5) & ~uptrend]         = -1
 
     return sig
 
 
 def run_backtest(df: pd.DataFrame, signals: pd.Series, capital: float, commission: float):
     """
-    ATR-based position sizing with 2.5× ATR stop-loss and 1.0× ATR take-profit.
-    Risk 2% of equity per trade; stop = 2.5× ATR below entry.
-    Wider stop gives confirmed trades room to breathe, while tight TP secures a high win rate.
+    ATR-based position sizing with 2.0× ATR stop-loss and 2.0× ATR take-profit.
+    Risk 2% of equity per trade; stop = 2.0× ATR below entry.
+    Balanced 1:1 Risk-Reward prevents overfitting and curve fitting.
     """
     RISK_PCT    = 0.02   # risk 2% of equity per trade
-    ATR_MULT_SL = 2.5    # stop-loss = 2.5 × ATR
-    ATR_MULT_TP = 1.0    # take-profit = 1.0 × ATR (secures high win rate)
+    ATR_MULT_SL = 2.0    # stop-loss = 2.0 × ATR
+    ATR_MULT_TP = 2.0    # take-profit = 2.0 × ATR
 
     pos, cash, shares = 0, capital, 0.0
     stop_price = 0.0
