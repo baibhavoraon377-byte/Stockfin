@@ -422,9 +422,10 @@ def fetch_and_train(symbol: str, period: str, forecast_days: int, model_choice: 
         X_xgb_val = X_train_s[-val_n:]
         y_xgb_val = y_train[-val_n:]
         xgbm = xgb.XGBRegressor(
-            n_estimators=300, max_depth=4, learning_rate=0.05,
+            n_estimators=150, max_depth=4, learning_rate=0.05,
             subsample=0.8, colsample_bytree=0.8, min_child_weight=3,
             reg_alpha=0.5, reg_lambda=2.0, random_state=42, verbosity=0,
+            n_jobs=-1, tree_method="hist"
         )
         xgbm.fit(X_xgb_tr, y_xgb_tr,
                  eval_set=[(X_xgb_val, y_xgb_val)],
