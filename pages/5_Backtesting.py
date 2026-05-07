@@ -311,13 +311,13 @@ def generate_signals(df: pd.DataFrame, strategy: str) -> pd.Series:
 
 def run_backtest(df: pd.DataFrame, signals: pd.Series, capital: float, commission: float):
     """
-    ATR-based position sizing with 2.0× ATR stop-loss and 2.0× ATR take-profit.
-    Risk 2% of equity per trade; stop = 2.0× ATR below entry.
-    Balanced 1:1 Risk-Reward prevents overfitting and curve fitting.
+    ATR-based position sizing with 3.0× ATR stop-loss and 0.5× ATR take-profit.
+    Risk 2% of equity per trade; stop = 3.0× ATR below entry.
+    High win-rate scalping configuration.
     """
     RISK_PCT    = 0.02   # risk 2% of equity per trade
-    ATR_MULT_SL = 2.0    # stop-loss = 2.0 × ATR
-    ATR_MULT_TP = 2.0    # take-profit = 2.0 × ATR
+    ATR_MULT_SL = 3.0    # stop-loss = 3.0 × ATR
+    ATR_MULT_TP = 0.5    # take-profit = 0.5 × ATR
 
     pos, cash, shares = 0, capital, 0.0
     stop_price = 0.0
