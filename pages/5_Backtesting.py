@@ -260,6 +260,16 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     lc  = (df["Low"]  - df["Close"].shift()).abs()
     df["ATR"] = pd.concat([hl, hc, lc], axis=1).max(axis=1).rolling(14).mean()
 
+    # ── ADX (14) ──
+    high_diff = df["High"].diff()
+    low_diff = -df["Low"].diff()
+    pos_dm = np.where((high_diff > low_diff) & (high_diff > 0), high_diff, 0.0)
+    neg_dm = np.where((low_diff > high_diff) & (low_diff > 0), low_diff, 0.0)
+    pos_di = 100 * (pd.Series(pos_dm, index=df.index).rolling(14).mean() / df["ATR"].replace(0, np.nan))
+    neg_di = 100 * (pd.Series(neg_dm, index=df.index).rolling(14).mean() / df["ATR"].replace(0, np.nan))
+    dx = 100 * (abs(pos_di - neg_di) / (pos_di + neg_di).replace(0, np.nan))
+    df["ADX"] = dx.rolling(14).mean().fillna(20)
+
     df.dropna(inplace=True)
     return df
 
@@ -269,55 +279,57 @@ def generate_signals(df: pd.DataFrame, strategy: str) -> pd.Series:
     # ── Shared boolean masks ──────────────────────────────────────────────
     uptrend = df["Close"] > df["MA200"]          # macro trend filter
     vol_ok  = df["Volume"] > df["Volume_MA20"]   # above-average volume
+    strong_trend = df["ADX"] > 25                # trending market
+    ranging_market = df["ADX"] <= 25             # choppy/ranging market
 
     if strategy == "SMA Crossover (20/50)":
         prev = df["MA20v50_x"].shift(1)
         cross_up   = (df["MA20v50_x"] == 1) & (prev == 0)
         cross_down = (df["MA20v50_x"] == 0) & (prev == 1)
-        # Long only in macro uptrend; exit on any cross-down (no uptrend requirement)
-        sig[cross_up & uptrend] =  1
-        sig[cross_down]          = -1
+        # Long only in macro uptrend and strong trend; exit on any cross-down
+        sig[cross_up & uptrend & strong_trend] =  1
+        sig[cross_down]                        = -1
 
     elif strategy == "RSI Mean Reversion":
-        # Tighter oversold + price must be near lower Bollinger Band + Trend filter
+        # Tighter oversold + price must be near lower Bollinger Band + ranging market
         near_bb_low = df["Close"] < df["BB_Lower"] * 1.05
-        sig[(df["RSI"] < 30) & near_bb_low & uptrend] =  1
-        sig[df["RSI"] > 70]                           = -1
+        sig[(df["RSI"] < 25) & near_bb_low & uptrend & ranging_market] =  1
+        sig[df["RSI"] > 75]                                            = -1
 
     elif strategy == "Bollinger Band Breakout":
-        # Add RSI confirmation + Trend confirmation to increase accuracy
-        rsi_oversold   = df["RSI"] < 40
-        rsi_overbought = df["RSI"] > 60
-        sig[(df["Close"] < df["BB_Lower"]) & rsi_oversold & uptrend]   =  1
-        sig[(df["Close"] > df["BB_Upper"]) & rsi_overbought & ~uptrend]  = -1
+        # Add RSI confirmation + Ranging confirmation to increase accuracy
+        rsi_oversold   = df["RSI"] < 35
+        rsi_overbought = df["RSI"] > 65
+        sig[(df["Close"] < df["BB_Lower"]) & rsi_oversold & uptrend & ranging_market]  =  1
+        sig[(df["Close"] > df["BB_Upper"]) & rsi_overbought & ~uptrend]                = -1
 
     elif strategy == "MACD Signal":
         prev_macd = df["MACD"].shift(1)
         prev_s    = df["Signal"].shift(1)
-        # MACD crosses up AND histogram is growing (momentum confirmation)
+        # MACD crosses up AND histogram is growing AND strong trend
         hist_up   = (df["MACD_hist"] > 0) & (df["MACD_hist"] > df["MACD_hist"].shift(1))
         hist_down = (df["MACD_hist"] < 0) & (df["MACD_hist"] < df["MACD_hist"].shift(1))
-        sig[(df["MACD"] > df["Signal"]) & (prev_macd <= prev_s) & hist_up]   =  1
-        sig[(df["MACD"] < df["Signal"]) & (prev_macd >= prev_s) & hist_down]  = -1
+        sig[(df["MACD"] > df["Signal"]) & (prev_macd <= prev_s) & hist_up & strong_trend]   =  1
+        sig[(df["MACD"] < df["Signal"]) & (prev_macd >= prev_s) & hist_down]                = -1
 
     elif strategy == "Momentum (ROC)":
-        # RSI in healthy zone + macro uptrend + volume surge confirmation
+        # RSI in healthy zone + macro uptrend + volume surge + strong trend
         healthy_rsi = (df["RSI"] >= 45) & (df["RSI"] <= 68)
-        sig[(df["ROC20"] > 5)  & healthy_rsi & uptrend & vol_ok] =  1
-        sig[(df["ROC20"] < -5) & ~uptrend]                        = -1
+        sig[(df["ROC20"] > 5)  & healthy_rsi & uptrend & vol_ok & strong_trend] =  1
+        sig[(df["ROC20"] < -5) & ~uptrend]                                      = -1
 
     return sig
 
 
 def run_backtest(df: pd.DataFrame, signals: pd.Series, capital: float, commission: float):
     """
-    ATR-based position sizing with 3× ATR stop-loss and 1.5× ATR take-profit.
-    Risk 1% of equity per trade; stop = 3× ATR below entry.
-    Wider stop gives confirmed trades room to breathe, while TP secures a high win rate.
+    ATR-based position sizing with 2.5× ATR stop-loss and 1.0× ATR take-profit.
+    Risk 2% of equity per trade; stop = 2.5× ATR below entry.
+    Wider stop gives confirmed trades room to breathe, while tight TP secures a high win rate.
     """
-    RISK_PCT    = 0.01   # risk 1% of equity per trade
-    ATR_MULT_SL = 3.0    # stop-loss = 3 × ATR
-    ATR_MULT_TP = 1.5    # take-profit = 1.5 × ATR (secures high win rate)
+    RISK_PCT    = 0.02   # risk 2% of equity per trade
+    ATR_MULT_SL = 2.5    # stop-loss = 2.5 × ATR
+    ATR_MULT_TP = 1.0    # take-profit = 1.0 × ATR (secures high win rate)
 
     pos, cash, shares = 0, capital, 0.0
     stop_price = 0.0
