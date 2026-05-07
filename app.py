@@ -1,8 +1,3 @@
-"""
-StockFin — Live Market Dashboard
-Entry point for the Streamlit multi-page app.
-Run with: streamlit run app.py
-"""
 
 from __future__ import annotations
 import streamlit as st
